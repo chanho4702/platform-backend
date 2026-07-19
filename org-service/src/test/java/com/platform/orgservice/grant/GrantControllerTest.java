@@ -79,4 +79,13 @@ class GrantControllerTest {
         mvc.perform(get("/api/org/members").with(asUser(USER_ID, "Bob")))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    void GLOBAL_grant는_resourceId가_빈값으로_정규화된다() throws Exception {
+        String body = "{\"subjectType\":\"USER\",\"subjectId\":300,\"resourceType\":\"GLOBAL\",\"resourceId\":\"junk\",\"role\":\"ADMIN\"}";
+        mvc.perform(post("/api/org/grants").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.resourceId").value(""));
+    }
 }

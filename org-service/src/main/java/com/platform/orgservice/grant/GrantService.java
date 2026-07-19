@@ -31,9 +31,10 @@ public class GrantService {
 
     public GrantDetailResponse create(long actorId, GrantCreateRequest req) {
         permissions.requireGlobalAdmin(actorId);
+        String resourceId = req.resourceType() == ResourceKind.GLOBAL ? "" : req.resourceId();
         try {
             GrantEntry saved = grants.saveAndFlush(GrantEntry.of(
-                    req.subjectType(), req.subjectId(), req.resourceType(), req.resourceId(), req.role()));
+                    req.subjectType(), req.subjectId(), req.resourceType(), resourceId, req.role()));
             return GrantDetailResponse.from(saved);
         } catch (DataIntegrityViolationException e) {
             throw new IllegalArgumentException("이미 존재하는 grant (subject·resource 조합 중복)");

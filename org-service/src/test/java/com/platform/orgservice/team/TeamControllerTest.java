@@ -119,4 +119,29 @@ class TeamControllerTest {
 
         org.assertj.core.api.Assertions.assertThat(teamMembers.findByTeamId(teamId)).hasSize(1);
     }
+
+    @Test
+    void 없는_멤버_팀원_추가는_404() throws Exception {
+        String body = mvc.perform(post("/api/org/teams").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"qa\",\"description\":null}"))
+                .andReturn().getResponse().getContentAsString();
+        long teamId = com.jayway.jsonpath.JsonPath.parse(body).read("$.id", Long.class);
+        mvc.perform(put("/api/org/teams/" + teamId + "/members/99999?role=MEMBER")
+                .with(asUser(ADMIN_ID, "Admin"))).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void 팀명_수정도_중복이면_400() throws Exception {
+        mvc.perform(post("/api/org/teams").with(asUser(ADMIN_ID, "Admin"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"a-team\",\"description\":null}"))
+                .andExpect(status().isCreated());
+        String body = mvc.perform(post("/api/org/teams").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"b-team\",\"description\":null}"))
+                .andReturn().getResponse().getContentAsString();
+        long bId = com.jayway.jsonpath.JsonPath.parse(body).read("$.id", Long.class);
+        mvc.perform(put("/api/org/teams/" + bId).with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"a-team\",\"description\":null}"))
+                .andExpect(status().isBadRequest());
+    }
 }
