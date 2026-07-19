@@ -90,4 +90,33 @@ class TeamControllerTest {
                         .content("{\"name\":\"x\",\"description\":null}"))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void 중복_팀_이름은_400() throws Exception {
+        mvc.perform(post("/api/org/teams").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"dev\",\"description\":null}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/org/teams").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"dev\",\"description\":null}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 팀원_중복_추가는_멱등이다() throws Exception {
+        members.save(Member.of(USER_ID, "Bob", null));
+        String body = mvc.perform(post("/api/org/teams").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"ops\",\"description\":null}"))
+                .andReturn().getResponse().getContentAsString();
+        long teamId = com.jayway.jsonpath.JsonPath.parse(body).read("$.id", Long.class);
+
+        mvc.perform(put("/api/org/teams/" + teamId + "/members/" + USER_ID + "?role=MEMBER")
+                .with(asUser(ADMIN_ID, "Admin"))).andExpect(status().isOk());
+        mvc.perform(put("/api/org/teams/" + teamId + "/members/" + USER_ID + "?role=MEMBER")
+                .with(asUser(ADMIN_ID, "Admin"))).andExpect(status().isOk());
+
+        org.assertj.core.api.Assertions.assertThat(teamMembers.findByTeamId(teamId)).hasSize(1);
+    }
 }
