@@ -10,7 +10,7 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "team_member",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"teamId", "memberId"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"team_id", "member_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TeamMember {

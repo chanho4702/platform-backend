@@ -22,6 +22,7 @@ public class Team {
     @Column(nullable = false, unique = true)
     private String name;
 
+    @Column(columnDefinition = "text")
     private String description;
 
     @CreationTimestamp
