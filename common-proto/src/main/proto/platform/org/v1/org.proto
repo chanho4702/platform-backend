@@ -1,0 +1,39 @@
+syntax = "proto3";
+package platform.org.v1;
+option java_multiple_files = true;
+option java_package = "com.platform.proto.org.v1";
+
+// 조직/권한 계약 v1 — breaking change는 v2 패키지 신설로 대응(온프렘 구버전 공존).
+service PermissionService {
+  // 단건 권한 판정 — 모든 서비스의 인가 2차 방어가 호출
+  rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse);
+  // 검색 결과 권한 필터용(Wave C) — 사용자가 접근 가능한 리소스 목록
+  rpc ListUserGrants(ListUserGrantsRequest) returns (ListUserGrantsResponse);
+}
+
+enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
+enum Action { ACTION_UNSPECIFIED = 0; VIEW = 1; EDIT = 2; ADMIN = 3; }
+// ROLE_ADMIN: 같은 proto 패키지의 Action.ADMIN과 C++ 스코프 충돌 회피(proto3 enum 값은 패키지 스코프)
+enum Role { ROLE_UNSPECIFIED = 0; VIEWER = 1; EDITOR = 2; ROLE_ADMIN = 3; }
+
+message CheckPermissionRequest {
+  int64 user_id = 1;           // JWT sub
+  ResourceType resource_type = 2;
+  string resource_id = 3;      // GLOBAL이면 빈 값
+  Action action = 4;
+}
+message CheckPermissionResponse {
+  bool allowed = 1;
+  Role effective_role = 2;     // grant 없으면 ROLE_UNSPECIFIED
+}
+
+message ListUserGrantsRequest {
+  int64 user_id = 1;
+  ResourceType resource_type = 2;  // UNSPECIFIED면 전체
+}
+message ListUserGrantsResponse { repeated Grant grants = 1; }
+message Grant {
+  ResourceType resource_type = 1;
+  string resource_id = 2;
+  Role role = 3;
+}
