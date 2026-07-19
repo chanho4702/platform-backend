@@ -1,0 +1,3 @@
+rootProject.name = 'platform-backend'
+// search-service · notification-service 모듈은 Wave C/E에서 include 추가
+include 'common-proto', 'org-service'
