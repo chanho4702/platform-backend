@@ -20,6 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -82,5 +83,36 @@ class PermissionGrpcServiceTest {
         assertThat(all.getGrantsList()).hasSize(2);
         assertThat(spaceOnly.getGrantsList()).hasSize(1);
         assertThat(spaceOnly.getGrants(0).getRole()).isEqualTo(Role.VIEWER);
+    }
+
+    @Test
+    void CreateGrant_신규는_created_true_중복은_false_멱등() {
+        CreateGrantRequest req = CreateGrantRequest.newBuilder()
+                .setUserId(5L).setResourceType(ResourceType.SPACE).setResourceId("7")
+                .setRole(Role.ROLE_ADMIN).build();
+
+        assertThat(stub.createGrant(req).getCreated()).isTrue();
+        assertThat(stub.createGrant(req).getCreated()).isFalse(); // 멱등
+        assertThat(grants.findBySubjectTypeAndSubjectIdAndResourceTypeAndResourceId(
+                SubjectType.USER, 5L, ResourceKind.SPACE, "7")).isPresent();
+    }
+
+    @Test
+    void CreateGrant_GLOBAL은_resourceId가_빈값으로_정규화된다() {
+        stub.createGrant(CreateGrantRequest.newBuilder()
+                .setUserId(6L).setResourceType(ResourceType.GLOBAL).setResourceId("junk")
+                .setRole(Role.ROLE_ADMIN).build());
+
+        assertThat(grants.findBySubjectTypeAndSubjectIdAndResourceTypeAndResourceId(
+                SubjectType.USER, 6L, ResourceKind.GLOBAL, "")).isPresent();
+    }
+
+    @Test
+    void CreateGrant_UNSPECIFIED_인자는_INVALID_ARGUMENT() {
+        assertThatThrownBy(() -> stub.createGrant(CreateGrantRequest.newBuilder()
+                .setUserId(5L).setResourceType(ResourceType.RESOURCE_TYPE_UNSPECIFIED)
+                .setRole(Role.ROLE_ADMIN).build()))
+                .isInstanceOf(io.grpc.StatusRuntimeException.class)
+                .hasMessageContaining("INVALID_ARGUMENT");
     }
 }

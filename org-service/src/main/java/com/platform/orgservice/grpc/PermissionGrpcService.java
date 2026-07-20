@@ -1,9 +1,12 @@
 package com.platform.orgservice.grpc;
 
+import com.platform.orgservice.domain.GrantEntry;
 import com.platform.orgservice.domain.GrantRole;
 import com.platform.orgservice.domain.PermAction;
 import com.platform.orgservice.domain.ResourceKind;
+import com.platform.orgservice.domain.SubjectType;
 import com.platform.orgservice.permission.PermissionFacade;
+import com.platform.orgservice.repository.GrantEntryRepository;
 import com.platform.proto.org.v1.*;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -16,6 +19,7 @@ import org.springframework.stereotype.Service;
 public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServiceImplBase {
 
     private final PermissionFacade permissions;
+    private final GrantEntryRepository grants;
 
     @Override
     public void checkPermission(CheckPermissionRequest req, StreamObserver<CheckPermissionResponse> out) {
@@ -47,6 +51,26 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
         out.onCompleted();
     }
 
+    @Override
+    public void createGrant(CreateGrantRequest req, StreamObserver<CreateGrantResponse> out) {
+        ResourceKind kind = toKind(req.getResourceType());
+        GrantRole role = toDomainRole(req.getRole());
+        if (kind == null || role == null) {
+            out.onError(Status.INVALID_ARGUMENT
+                    .withDescription("resource_type/role은 UNSPECIFIED일 수 없습니다").asRuntimeException());
+            return;
+        }
+        String resourceId = kind == ResourceKind.GLOBAL ? "" : req.getResourceId();
+        boolean created = grants.findBySubjectTypeAndSubjectIdAndResourceTypeAndResourceId(
+                        SubjectType.USER, req.getUserId(), kind, resourceId)
+                .isEmpty();
+        if (created) {
+            grants.save(GrantEntry.of(SubjectType.USER, req.getUserId(), kind, resourceId, role));
+        }
+        out.onNext(CreateGrantResponse.newBuilder().setCreated(created).build());
+        out.onCompleted();
+    }
+
     private static ResourceKind toKind(ResourceType t) {
         return switch (t) {
             case GLOBAL -> ResourceKind.GLOBAL;
@@ -61,6 +85,16 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
             case VIEW -> PermAction.VIEW;
             case EDIT -> PermAction.EDIT;
             case ADMIN -> PermAction.ADMIN;
+            default -> null;
+        };
+    }
+
+    /** proto Role → 도메인 GrantRole (ROLE_ADMIN ↔ ADMIN 비대칭 유지). */
+    private static GrantRole toDomainRole(Role r) {
+        return switch (r) {
+            case VIEWER -> GrantRole.VIEWER;
+            case EDITOR -> GrantRole.EDITOR;
+            case ROLE_ADMIN -> GrantRole.ADMIN;
             default -> null;
         };
     }
