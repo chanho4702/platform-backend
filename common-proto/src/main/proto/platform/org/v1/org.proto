@@ -9,6 +9,8 @@ service PermissionService {
   rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse);
   // 검색 결과 권한 필터용(Wave C) — 사용자가 접근 가능한 리소스 목록
   rpc ListUserGrants(ListUserGrantsRequest) returns (ListUserGrantsResponse);
+  // 내부 전용 — 리소스 생성자 자동 권한 부여용 (예: wiki 스페이스 생성자 → SPACE ADMIN)
+  rpc CreateGrant(CreateGrantRequest) returns (CreateGrantResponse);
 }
 
 enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
@@ -37,3 +39,11 @@ message Grant {
   string resource_id = 2;
   Role role = 3;
 }
+
+message CreateGrantRequest {
+  int64 user_id = 1;
+  ResourceType resource_type = 2;
+  string resource_id = 3;      // GLOBAL이면 빈 값으로 정규화됨
+  Role role = 4;
+}
+message CreateGrantResponse { bool created = 1; }  // 동일 grant 존재 시 false (멱등)

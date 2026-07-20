@@ -1,0 +1,29 @@
+syntax = "proto3";
+package platform.events.v1;
+option java_multiple_files = true;
+option java_package = "com.platform.proto.events.v1";
+
+// 모든 도메인 이벤트의 공통 봉투. Redis Stream(platform:events:v1) 엔트리의 payload 필드에 바이너리로 실린다.
+// 본문(content)은 싣지 않는다 — 소비자는 "무엇이 변했나"만 알고, 내용은 소유 서비스 API로 가져간다.
+message EventEnvelope {
+  string event_id = 1;        // UUID — 소비자 멱등 처리용
+  int64 occurred_at = 2;      // epoch millis
+  int64 actor_id = 3;         // 행위자 (auth user id)
+  string source = 4;          // 발행 서비스명 (예: "wiki-backend")
+  oneof payload {
+    SpaceCreated space_created = 10;
+    SpaceDeleted space_deleted = 11;
+    PageCreated page_created = 12;
+    PageUpdated page_updated = 13;
+    PageDeleted page_deleted = 14;
+    AttachmentAdded attachment_added = 15;
+    // alm 이벤트는 Wave D에서 20번대로 추가
+  }
+}
+
+message SpaceCreated { int64 space_id = 1; string key = 2; string name = 3; }
+message SpaceDeleted { int64 space_id = 1; }
+message PageCreated  { int64 page_id = 1; int64 space_id = 2; string title = 3; }
+message PageUpdated  { int64 page_id = 1; int64 space_id = 2; string title = 3; int32 version = 4; }
+message PageDeleted  { int64 page_id = 1; int64 space_id = 2; }
+message AttachmentAdded { int64 attachment_id = 1; int64 page_id = 2; int64 space_id = 3; string filename = 4; }
