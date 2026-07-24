@@ -1,0 +1,17 @@
+# dev 프로필 — 도커 풀스택과 나란히 실행 (포트 +10000). REST 19130 · gRPC 19131.
+# docker 프로필과 달리 eureka 등록 유지(게이트웨이 lb:// 디스커버리 경로).
+server:
+  port: 19130
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:19000/.well-known/jwks.json
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:18761/eureka
+platform:
+  grpc:
+    port: 19131
