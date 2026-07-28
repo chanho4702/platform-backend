@@ -13,6 +13,9 @@ import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Objects;
+
 /** platform.org.v1.PermissionService 구현 — 판정 로직은 PermissionFacade에 위임. */
 @Service
 @RequiredArgsConstructor
@@ -68,6 +71,32 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
             grants.save(GrantEntry.of(SubjectType.USER, req.getUserId(), kind, resourceId, role));
         }
         out.onNext(CreateGrantResponse.newBuilder().setCreated(created).build());
+        out.onCompleted();
+    }
+
+    /**
+     * 리소스가 사라졌을 때 그 리소스에 걸린 grant를 정리한다 — 없으면 고아 grant가 남아,
+     * 같은 id가 재사용될 때 예전 사용자에게 권한이 되살아난다.
+     * user_id를 지정하면 그 사용자 것만. 대상이 없어도 에러가 아니다(삭제는 재시도된다).
+     */
+    @Override
+    public void revokeGrant(RevokeGrantRequest req, StreamObserver<RevokeGrantResponse> out) {
+        ResourceKind kind = toKind(req.getResourceType());
+        if (kind == null) {
+            out.onError(Status.INVALID_ARGUMENT
+                    .withDescription("resource_type은 UNSPECIFIED일 수 없습니다").asRuntimeException());
+            return;
+        }
+        String resourceId = kind == ResourceKind.GLOBAL ? "" : req.getResourceId();
+        List<GrantEntry> targets = grants.findByResourceTypeAndResourceId(kind, resourceId);
+        if (req.getUserId() != 0L) {
+            targets = targets.stream()
+                    .filter(g -> g.getSubjectType() == SubjectType.USER
+                            && Objects.equals(g.getSubjectId(), req.getUserId()))
+                    .toList();
+        }
+        grants.deleteAll(targets);
+        out.onNext(RevokeGrantResponse.newBuilder().setRevoked(targets.size()).build());
         out.onCompleted();
     }
 

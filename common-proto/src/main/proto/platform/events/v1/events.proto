@@ -17,13 +17,20 @@ message EventEnvelope {
     PageUpdated page_updated = 13;
     PageDeleted page_deleted = 14;
     AttachmentAdded attachment_added = 15;
+    // v0.3.0 추가 — 10~15는 v0.2.0에서 이미 발행돼 번호를 재사용하지 않는다
+    SpaceUpdated space_updated = 16;
+    AttachmentDeleted attachment_deleted = 17;
     // alm 이벤트는 Wave D에서 20번대로 추가
   }
 }
 
 message SpaceCreated { int64 space_id = 1; string key = 2; string name = 3; }
+// 이름·설명이 바뀌면 색인의 스페이스 표시명이 스테일해진다 — 그래서 갱신도 이벤트로 나간다.
+message SpaceUpdated { int64 space_id = 1; string key = 2; string name = 3; }
 message SpaceDeleted { int64 space_id = 1; }
 message PageCreated  { int64 page_id = 1; int64 space_id = 2; string title = 3; }
 message PageUpdated  { int64 page_id = 1; int64 space_id = 2; string title = 3; int32 version = 4; }
 message PageDeleted  { int64 page_id = 1; int64 space_id = 2; }
 message AttachmentAdded { int64 attachment_id = 1; int64 page_id = 2; int64 space_id = 3; string filename = 4; }
+// 첨부가 사라졌는데 색인에 남으면 검색 결과에서 404로 이어진다.
+message AttachmentDeleted { int64 attachment_id = 1; int64 page_id = 2; int64 space_id = 3; }

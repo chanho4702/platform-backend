@@ -115,4 +115,61 @@ class PermissionGrpcServiceTest {
                 .isInstanceOf(io.grpc.StatusRuntimeException.class)
                 .hasMessageContaining("INVALID_ARGUMENT");
     }
+
+    // ── RevokeGrant (v0.3.0) — 리소스가 사라졌을 때 고아 grant 정리 ──
+
+    @Test
+    void RevokeGrant_user_id가_0이면_그_리소스의_grant를_전부_회수한다() {
+        for (long userId : new long[] {11L, 12L}) {
+            stub.createGrant(CreateGrantRequest.newBuilder()
+                    .setUserId(userId).setResourceType(ResourceType.SPACE).setResourceId("77")
+                    .setRole(Role.ROLE_ADMIN).build());
+        }
+        // 다른 리소스의 grant는 남아야 한다
+        stub.createGrant(CreateGrantRequest.newBuilder()
+                .setUserId(11L).setResourceType(ResourceType.SPACE).setResourceId("88")
+                .setRole(Role.VIEWER).build());
+
+        RevokeGrantResponse res = stub.revokeGrant(RevokeGrantRequest.newBuilder()
+                .setResourceType(ResourceType.SPACE).setResourceId("77").build());
+
+        assertThat(res.getRevoked()).isEqualTo(2);
+        assertThat(grants.findByResourceTypeAndResourceId(ResourceKind.SPACE, "77")).isEmpty();
+        assertThat(grants.findByResourceTypeAndResourceId(ResourceKind.SPACE, "88")).hasSize(1);
+    }
+
+    @Test
+    void RevokeGrant_user_id를_지정하면_그_사용자_것만_회수한다() {
+        for (long userId : new long[] {21L, 22L}) {
+            stub.createGrant(CreateGrantRequest.newBuilder()
+                    .setUserId(userId).setResourceType(ResourceType.SPACE).setResourceId("99")
+                    .setRole(Role.EDITOR).build());
+        }
+
+        RevokeGrantResponse res = stub.revokeGrant(RevokeGrantRequest.newBuilder()
+                .setResourceType(ResourceType.SPACE).setResourceId("99").setUserId(21L).build());
+
+        assertThat(res.getRevoked()).isEqualTo(1);
+        assertThat(grants.findBySubjectTypeAndSubjectIdAndResourceTypeAndResourceId(
+                SubjectType.USER, 21L, ResourceKind.SPACE, "99")).isEmpty();
+        assertThat(grants.findBySubjectTypeAndSubjectIdAndResourceTypeAndResourceId(
+                SubjectType.USER, 22L, ResourceKind.SPACE, "99")).isPresent();
+    }
+
+    /** 삭제는 재시도될 수 있다 — 두 번째 호출이 에러가 되면 호출측이 실패로 오해한다. */
+    @Test
+    void RevokeGrant_대상이_없으면_0을_반환한다_멱등() {
+        RevokeGrantResponse res = stub.revokeGrant(RevokeGrantRequest.newBuilder()
+                .setResourceType(ResourceType.SPACE).setResourceId("존재하지않음").build());
+
+        assertThat(res.getRevoked()).isZero();
+    }
+
+    @Test
+    void RevokeGrant_UNSPECIFIED_리소스타입은_INVALID_ARGUMENT() {
+        assertThatThrownBy(() -> stub.revokeGrant(RevokeGrantRequest.newBuilder()
+                .setResourceType(ResourceType.RESOURCE_TYPE_UNSPECIFIED).setResourceId("1").build()))
+                .isInstanceOf(io.grpc.StatusRuntimeException.class)
+                .hasMessageContaining("INVALID_ARGUMENT");
+    }
 }

@@ -11,6 +11,8 @@ service PermissionService {
   rpc ListUserGrants(ListUserGrantsRequest) returns (ListUserGrantsResponse);
   // 내부 전용 — 리소스 생성자 자동 권한 부여용 (예: wiki 스페이스 생성자 → SPACE ADMIN)
   rpc CreateGrant(CreateGrantRequest) returns (CreateGrantResponse);
+  // 내부 전용 — 리소스가 사라졌을 때 그 리소스에 걸린 grant 정리 (없으면 고아 grant가 남는다)
+  rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse);
 }
 
 enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
@@ -47,3 +49,11 @@ message CreateGrantRequest {
   Role role = 4;
 }
 message CreateGrantResponse { bool created = 1; }  // 동일 grant 존재 시 false (멱등)
+
+message RevokeGrantRequest {
+  ResourceType resource_type = 1;
+  string resource_id = 2;      // GLOBAL이면 빈 값으로 정규화됨
+  // 0이면 해당 리소스의 grant 전부 회수(리소스 삭제 시). 지정하면 그 사용자 것만.
+  int64 user_id = 3;
+}
+message RevokeGrantResponse { int32 revoked = 1; }  // 회수한 grant 수 — 대상이 없으면 0 (멱등)
