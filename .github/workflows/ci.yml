@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # GHCR 이미지 push
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -16,6 +19,37 @@ jobs:
           java-version: '24'
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew build
+
+      # ── org-service 배포 (main push만 — 태그 push는 proto 발행 전용이라 제외된다) ──
+      - name: Login GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Dockerfile은 런타임 전용(위 build의 :org-service:bootJar 산출물 COPY).
+      # context가 리포 루트인 이유: Dockerfile이 org-service/build/libs/app.jar를 참조한다(compose와 동일).
+      - name: Build & push image
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: org-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/chanho4702/org-service:latest
+            ghcr.io/chanho4702/org-service:sha-${{ github.sha }}
+
+      - name: Dispatch deploy
+        if: github.ref == 'refs/heads/main'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DISPATCH_PAT }}
+          repository: chanho4702/infra-settings
+          event-type: deploy
+          client-payload: '{"service":"org-service","sha":"${{ github.sha }}","run_id":"${{ github.run_id }}","repo":"${{ github.repository }}"}'
 
   publish-proto:
     if: startsWith(github.ref, 'refs/tags/v')
