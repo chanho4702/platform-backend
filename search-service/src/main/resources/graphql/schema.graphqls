@@ -1,0 +1,49 @@
+# 통합 검색 계약 (설계 §8). 게이트웨이 라우트 `/api/search/**` → 이 서비스의 `/graphql`.
+#
+# GraphQL을 쓰는 이유는 필터 조합·필드 선택이 검색 요구의 본질이고, Wave D에서 ALM이 합류하면
+# 다중 도메인 조합 조회가 실제로 필요해지기 때문이다(15번 문서 통신 매트릭스).
+
+type Query {
+  search(input: SearchInput!): SearchResults!
+}
+
+input SearchInput {
+  query: String!
+  "접근 가능한 스페이스와 교집합을 취한다 — 여기로 권한을 넓힐 수는 없다"
+  spaceIds: [ID!]
+  docTypes: [DocType!]
+  "기본은 게시된 문서만. 초안은 색인에는 있고 질의에서 걸러진다"
+  includeDrafts: Boolean = false
+  page: Int = 0
+  "상한 100 — 넘기면 100으로 잘린다"
+  size: Int = 20
+}
+
+type SearchResults {
+  total: Int!
+  tookMs: Int!
+  hits: [SearchHit!]!
+}
+
+type SearchHit {
+  id: ID!
+  docType: DocType!
+  spaceId: ID!
+  spaceKey: String!
+  spaceName: String!
+  "ATTACHMENT면 소속 페이지"
+  pageId: ID
+  "PAGE"
+  title: String
+  "ATTACHMENT"
+  filename: String
+  "제목·본문에서 잘라낸 하이라이트 조각"
+  highlights: [String!]!
+  updatedAt: String
+  score: Float!
+}
+
+enum DocType {
+  PAGE
+  ATTACHMENT
+}

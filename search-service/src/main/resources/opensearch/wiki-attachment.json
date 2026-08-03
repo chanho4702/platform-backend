@@ -1,0 +1,59 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "analysis": {
+      "tokenizer": {
+        "wiki_nori_tokenizer": {
+          "type": "nori_tokenizer",
+          "decompound_mode": "mixed"
+        }
+      },
+      "analyzer": {
+        "wiki_korean": {
+          "type": "custom",
+          "tokenizer": "wiki_nori_tokenizer",
+          "filter": ["nori_readingform", "lowercase"]
+        },
+        "wiki_filename": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "char_filter": ["wiki_filename_split"],
+          "filter": ["lowercase"]
+        }
+      },
+      "char_filter": {
+        "wiki_filename_split": {
+          "type": "mapping",
+          "mappings": ["_ => \\u0020", "- => \\u0020", ". => \\u0020"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "docType": { "type": "keyword" },
+      "attachmentId": { "type": "long" },
+      "pageId": { "type": "long" },
+      "spaceId": { "type": "long" },
+      "spaceKey": { "type": "keyword" },
+      "spaceName": {
+        "type": "text",
+        "analyzer": "wiki_korean",
+        "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+      },
+      "filename": {
+        "type": "text",
+        "analyzer": "wiki_filename",
+        "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+      },
+      "contentType": { "type": "keyword" },
+      "sizeBytes": { "type": "long" },
+      "uploadedBy": { "type": "long" },
+      "updatedAt": { "type": "date", "format": "epoch_millis" }
+    }
+  }
+}

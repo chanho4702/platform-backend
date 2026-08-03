@@ -1,0 +1,54 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "analysis": {
+      "tokenizer": {
+        "wiki_nori_tokenizer": {
+          "type": "nori_tokenizer",
+          "decompound_mode": "mixed"
+        }
+      },
+      "analyzer": {
+        "wiki_korean": {
+          "type": "custom",
+          "tokenizer": "wiki_nori_tokenizer",
+          "filter": ["nori_readingform", "lowercase", "wiki_pos_filter"]
+        }
+      },
+      "filter": {
+        "wiki_pos_filter": {
+          "type": "nori_part_of_speech",
+          "stoptags": ["E", "IC", "J", "MAG", "MAJ", "MM", "SP", "SSC", "SSO", "SC", "SE", "XPN", "XSA", "XSN", "XSV", "UNA", "NA", "VSV"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "docType": { "type": "keyword" },
+      "pageId": { "type": "long" },
+      "spaceId": { "type": "long" },
+      "spaceKey": { "type": "keyword" },
+      "spaceName": {
+        "type": "text",
+        "analyzer": "wiki_korean",
+        "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "wiki_korean",
+        "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+      },
+      "content": { "type": "text", "analyzer": "wiki_korean" },
+      "type": { "type": "keyword" },
+      "status": { "type": "keyword" },
+      "version": { "type": "integer" },
+      "authorId": { "type": "long" },
+      "updatedAt": { "type": "date", "format": "epoch_millis" }
+    }
+  }
+}
