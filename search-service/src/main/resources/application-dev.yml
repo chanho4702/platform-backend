@@ -1,0 +1,26 @@
+# dev 프로필 — 도커 풀스택과 나란히 실행하는 +10000 오프셋 클러스터.
+# Redis DB 1은 wiki-backend dev 발행자와 반드시 같아야 한다. 다르면 소비자는 db0의 빈
+# 스트림을 정상 상태로 오인하고 검색 결과만 조용히 스테일해진다.
+server:
+  port: 19140
+spring:
+  data:
+    redis:
+      database: 1
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:19000/.well-known/jwks.json
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:18761/eureka
+platform:
+  # org-service dev가 gRPC도 +10000(:19131)로 띄우므로 내부 호출도 그 포트를 본다.
+  org-grpc:
+    port: 19131
+
+# issuer는 접속 포트가 아니라 토큰 문자열 계약이라 dev도 기본값(:9000)을 유지한다.
+# wiki-backend dev의 내부 gRPC는 별도 오버라이드 없이 유효 포트 :9111을 유지하므로
+# platform.wiki-grpc.port도 application.yml 기본값을 그대로 쓴다.

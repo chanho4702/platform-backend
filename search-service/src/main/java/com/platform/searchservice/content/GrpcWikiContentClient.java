@@ -1,6 +1,7 @@
 package com.platform.searchservice.content;
 
 import com.platform.proto.wiki.v1.AttachmentMeta;
+import com.platform.proto.wiki.v1.GetAttachmentMetaRequest;
 import com.platform.proto.wiki.v1.GetPageContentRequest;
 import com.platform.proto.wiki.v1.ListAttachmentsRequest;
 import com.platform.proto.wiki.v1.ListPageContentsRequest;
@@ -34,7 +35,22 @@ public class GrpcWikiContentClient implements WikiContentClient {
                 return Optional.empty();
             }
             throw new ServiceUnavailableException(
-                    "위키 콘텐츠 조달 실패: page=" + pageId + " status=" + e.getStatus().getCode());
+                    "위키 콘텐츠 조달 실패: page=" + pageId + " status=" + e.getStatus().getCode(), e);
+        }
+    }
+
+    @Override
+    public Optional<AttachmentMeta> getAttachment(long attachmentId) {
+        try {
+            return Optional.of(stub.getAttachmentMeta(
+                    GetAttachmentMetaRequest.newBuilder().setAttachmentId(attachmentId).build()));
+        } catch (StatusRuntimeException e) {
+            if (e.getStatus().getCode() == Status.Code.NOT_FOUND) {
+                return Optional.empty();
+            }
+            throw new ServiceUnavailableException(
+                    "위키 첨부 조달 실패: attachment=" + attachmentId
+                            + " status=" + e.getStatus().getCode(), e);
         }
     }
 
@@ -56,7 +72,7 @@ public class GrpcWikiContentClient implements WikiContentClient {
         } catch (StatusRuntimeException e) {
             // 스트림 중간에 끊기면 백필은 불완전하다 — 조용히 끝내면 "다 됐다"로 오인된다
             throw new ServiceUnavailableException(
-                    what + " 백필 스트림이 중단됐습니다: " + e.getStatus().getCode());
+                    what + " 백필 스트림이 중단됐습니다: " + e.getStatus().getCode(), e);
         }
     }
 }
