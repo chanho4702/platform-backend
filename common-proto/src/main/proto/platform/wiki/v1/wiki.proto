@@ -12,8 +12,17 @@ option java_package = "com.platform.proto.wiki.v1";
 //
 // 주의: 이 서비스는 권한을 검사하지 않는다. 내부망에서만 노출한다(호스트 포트 미개방).
 service WikiContentService {
-  // 색인용 단건 조달. 페이지가 없으면 NOT_FOUND — 색인기는 이걸 "이미 지워졌다"로 읽고 색인에서 뺀다.
+  // 색인용 단건 조달.
+  //
+  // 상태 계약(색인기가 이 구분에 의존한다):
+  //   NOT_FOUND           = 대상이 없다 → 색인에서 뺀다(삭제로 간주)
+  //   FAILED_PRECONDITION = 대상은 있는데 참조가 깨졌다(예: 스페이스 없는 고아 페이지)
+  //                         → 삭제가 아니다. 재시도/DLQ 대상이며 원본 데이터 수리가 필요하다
+  //   UNAVAILABLE/DEADLINE_EXCEEDED = 일시 장애 → 재시도
   rpc GetPageContent(GetPageContentRequest) returns (PageContent);
+  // 첨부 단건 조달. AttachmentAdded 이벤트에는 파일명·크기·업로더·스페이스 표시명이 없어
+  // 색인 문서를 채우려면 따로 물어봐야 한다(전량 스트림을 매 이벤트마다 훑을 수는 없다).
+  rpc GetAttachmentMeta(GetAttachmentMetaRequest) returns (AttachmentMeta);
   // 백필용 전량 스트리밍. space_id=0이면 전 스페이스.
   rpc ListPageContents(ListPageContentsRequest) returns (stream PageContent);
   // 첨부 백필. space_id=0이면 전 스페이스.
@@ -24,6 +33,7 @@ enum PageType { PAGE_TYPE_UNSPECIFIED = 0; PAGE = 1; FOLDER = 2; }
 enum PageStatus { PAGE_STATUS_UNSPECIFIED = 0; DRAFT = 1; PUBLISHED = 2; }
 
 message GetPageContentRequest { int64 page_id = 1; }
+message GetAttachmentMetaRequest { int64 attachment_id = 1; }
 message ListPageContentsRequest { int64 space_id = 1; }
 message ListAttachmentsRequest { int64 space_id = 1; }
 
@@ -54,4 +64,8 @@ message AttachmentMeta {
   int64 size_bytes = 6;
   int64 uploaded_by = 7;
   int64 created_at = 8;     // epoch millis
+  // 페이지와 같은 이유로 비정규화한다 — 검색 결과를 그리려고 스페이스를 되묻지 않기 위해서다.
+  // v0.4.0 발행 뒤 추가된 필드라 뒤 번호를 쓴다(구버전 소비자는 빈 문자열로 읽는다).
+  string space_key = 9;
+  string space_name = 10;
 }
