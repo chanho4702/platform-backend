@@ -31,7 +31,7 @@ platform:
   jwt:
     issuer: ${PLATFORM_ISSUER:http://localhost:9000}
     audience: ${PLATFORM_AUDIENCE:platform-api}
-  # 권한 필터용 — org 불능 시 503 전파(fail-closed). 설계 §7
+  # 권한 필터용 — org 불능 시 SERVICE_UNAVAILABLE(httpStatus=503) GraphQL 오류 전파. 설계 §7
   org-grpc:
     host: ${ORG_GRPC_HOST:localhost}
     port: ${ORG_GRPC_PORT:9131}
@@ -59,3 +59,8 @@ spring:
 eureka:
   client:
     enabled: false
+logging:
+  # 컨테이너에서는 구조화 필드를 stdout JSON으로 내고 Alloy가 수집한다. 앱에서 Loki에 직결하지 않는다.
+  structured:
+    format:
+      console: ecs
