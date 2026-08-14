@@ -20,7 +20,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew build
 
-      # ── org-service 배포 (main push만 — 태그 push는 proto 발행 전용이라 제외된다) ──
+      # ── 이 리포의 서비스 모듈 배포 (main push만 — 태그 push는 proto 발행 전용이라 제외된다) ──
+      # 아래 이미지 스텝은 전부 위 `./gradlew build`(전 모듈 컴파일+테스트) 뒤에만 온다.
+      # 게이팅을 우회하는 경로를 만들지 않는다 — 테스트가 깨지면 어떤 이미지도 푸시되지 않는다.
       - name: Login GHCR
         if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
@@ -31,7 +33,7 @@ jobs:
 
       # Dockerfile은 런타임 전용(위 build의 :org-service:bootJar 산출물 COPY).
       # context가 리포 루트인 이유: Dockerfile이 org-service/build/libs/app.jar를 참조한다(compose와 동일).
-      - name: Build & push image
+      - name: Build & push org-service image
         if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
@@ -42,7 +44,22 @@ jobs:
             ghcr.io/chanho4702/org-service:latest
             ghcr.io/chanho4702/org-service:sha-${{ github.sha }}
 
-      - name: Dispatch deploy
+      # search-service (Wave C) — org-service와 같은 패턴. 런타임 전용 Dockerfile이
+      # search-service/build/libs/app.jar를 COPY하므로 context는 여기서도 리포 루트다.
+      - name: Build & push search-service image
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: search-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/chanho4702/search-service:latest
+            ghcr.io/chanho4702/search-service:sha-${{ github.sha }}
+
+      # 서비스별로 dispatch를 따로 쏜다. infra-settings의 Deploy는
+      # concurrency group이 deploy-<service>라 두 배포가 서로를 취소하지 않고 나란히 돈다.
+      - name: Dispatch deploy (org-service)
         if: github.ref == 'refs/heads/main'
         uses: peter-evans/repository-dispatch@v3
         with:
@@ -50,6 +67,15 @@ jobs:
           repository: chanho4702/infra-settings
           event-type: deploy
           client-payload: '{"service":"org-service","sha":"${{ github.sha }}","run_id":"${{ github.run_id }}","repo":"${{ github.repository }}"}'
+
+      - name: Dispatch deploy (search-service)
+        if: github.ref == 'refs/heads/main'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DISPATCH_PAT }}
+          repository: chanho4702/infra-settings
+          event-type: deploy
+          client-payload: '{"service":"search-service","sha":"${{ github.sha }}","run_id":"${{ github.run_id }}","repo":"${{ github.repository }}"}'
 
   publish-proto:
     if: startsWith(github.ref, 'refs/tags/v')
