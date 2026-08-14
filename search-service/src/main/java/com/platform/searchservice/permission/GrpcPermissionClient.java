@@ -1,5 +1,8 @@
 package com.platform.searchservice.permission;
 
+import com.platform.proto.org.v1.Action;
+import com.platform.proto.org.v1.CheckPermissionRequest;
+import com.platform.proto.org.v1.CheckPermissionResponse;
 import com.platform.proto.org.v1.ListUserGrantsRequest;
 import com.platform.proto.org.v1.ListUserGrantsResponse;
 import com.platform.proto.org.v1.PermissionServiceGrpc;
@@ -50,6 +53,23 @@ public class GrpcPermissionClient implements PermissionClient {
             // fail-closed(빈 목록)로 삼켰지만, 검색에서 빈 목록은 "결과 없음"과 구분되지 않아
             // 사용자가 권한 문제인지 알 방법이 없다.
             log.error("권한 조회 실패 — 검색 503 전파: user={}", userId, e);
+            throw new ServiceUnavailableException("권한 서비스에 연결할 수 없습니다");
+        }
+    }
+
+    @Override
+    public boolean isGlobalAdmin(long userId) {
+        try {
+            // org.proto가 이미 가진 계약 그대로다 — GLOBAL이면 resource_id는 빈 값으로 정규화된다.
+            CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                    .setUserId(userId)
+                    .setResourceType(ResourceType.GLOBAL)
+                    .setResourceId("")
+                    .setAction(Action.ADMIN)
+                    .build());
+            return res.getAllowed();
+        } catch (Exception e) {
+            log.error("전역 관리자 판정 실패 — 503 전파: user={}", userId, e);
             throw new ServiceUnavailableException("권한 서비스에 연결할 수 없습니다");
         }
     }

@@ -1,17 +1,12 @@
 package com.platform.searchservice.event;
 
 import com.platform.proto.events.v1.EventEnvelope;
-import com.platform.proto.wiki.v1.AttachmentMeta;
-import com.platform.proto.wiki.v1.PageContent;
 import com.platform.searchservice.content.WikiContentClient;
-import com.platform.searchservice.index.AttachmentDoc;
 import com.platform.searchservice.index.IndexingResult;
 import com.platform.searchservice.index.OpenSearchIndexService;
-import com.platform.searchservice.index.PageDoc;
+import com.platform.searchservice.index.WikiDocuments;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-
-import java.util.Locale;
 
 /** EventEnvelope의 wiki 이벤트를 OpenSearch 투영 연산으로 바꾼다. */
 @Component
@@ -46,7 +41,7 @@ public class WikiEventIndexer {
 
     private void upsertOrDeletePage(long pageId, long occurredAt) {
         content.getPage(pageId).ifPresentOrElse(
-                page -> indexes.upsertPage(toDocument(page), occurredAt),
+                page -> indexes.upsertPage(WikiDocuments.toDocument(page), occurredAt),
                 () -> deletePageAndAttachments(pageId, occurredAt));
     }
 
@@ -60,38 +55,8 @@ public class WikiEventIndexer {
 
     private void upsertOrDeleteAttachment(long attachmentId, long occurredAt) {
         content.getAttachment(attachmentId).ifPresentOrElse(
-                attachment -> indexes.upsertAttachment(toDocument(attachment), occurredAt),
+                attachment -> indexes.upsertAttachment(WikiDocuments.toDocument(attachment), occurredAt),
                 () -> indexes.deleteAttachment(attachmentId, occurredAt));
     }
 
-    private static PageDoc toDocument(PageContent page) {
-        return new PageDoc(
-                PageDoc.DOC_TYPE,
-                page.getPageId(),
-                page.getSpaceId(),
-                page.getSpaceKey(),
-                page.getSpaceName(),
-                page.getTitle(),
-                page.getContent(),
-                page.getType().name().toLowerCase(Locale.ROOT),
-                page.getStatus().name().toLowerCase(Locale.ROOT),
-                page.getVersion(),
-                page.getAuthorId(),
-                page.getUpdatedAt());
-    }
-
-    private static AttachmentDoc toDocument(AttachmentMeta attachment) {
-        return new AttachmentDoc(
-                AttachmentDoc.DOC_TYPE,
-                attachment.getAttachmentId(),
-                attachment.getPageId(),
-                attachment.getSpaceId(),
-                attachment.getSpaceKey(),
-                attachment.getSpaceName(),
-                attachment.getFilename(),
-                attachment.getContentType(),
-                attachment.getSizeBytes(),
-                attachment.getUploadedBy(),
-                attachment.getCreatedAt());
-    }
 }

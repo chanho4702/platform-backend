@@ -132,7 +132,9 @@ class RedisStreamEventConsumerTest {
                 .setMapper(new JacksonJsonpMapper(new ObjectMapper().findAndRegisterModules()))
                 .build();
         openSearch = new OpenSearchClient(transport);
-        new OpenSearchIndexBootstrap(openSearch, new ObjectMapper()).initialize();
+        new OpenSearchIndexBootstrap(
+                new com.platform.searchservice.index.OpenSearchIndexFactory(openSearch, new ObjectMapper()))
+                .initialize();
         indexes = new OpenSearchIndexService(openSearch);
     }
 

@@ -62,7 +62,7 @@ class OpenSearchIndexServiceTest {
                 .setMapper(new JacksonJsonpMapper(new ObjectMapper().findAndRegisterModules()))
                 .build();
         client = new OpenSearchClient(transport);
-        bootstrap = new OpenSearchIndexBootstrap(client, new ObjectMapper());
+        bootstrap = new OpenSearchIndexBootstrap(new OpenSearchIndexFactory(client, new ObjectMapper()));
         bootstrap.initialize();
         indexes = new OpenSearchIndexService(client);
     }

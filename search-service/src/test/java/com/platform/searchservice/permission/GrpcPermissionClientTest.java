@@ -1,5 +1,8 @@
 package com.platform.searchservice.permission;
 
+import com.platform.proto.org.v1.Action;
+import com.platform.proto.org.v1.CheckPermissionRequest;
+import com.platform.proto.org.v1.CheckPermissionResponse;
 import com.platform.proto.org.v1.Grant;
 import com.platform.proto.org.v1.ListUserGrantsRequest;
 import com.platform.proto.org.v1.ListUserGrantsResponse;
@@ -94,6 +97,38 @@ class GrpcPermissionClientTest {
                 .hasMessage("권한 서비스에 연결할 수 없습니다");
     }
 
+    @Test
+    void GLOBAL_ADMIN_판정은_CheckPermission_계약_그대로_묻는다() {
+        org.allowed = true;
+
+        assertThat(client.isGlobalAdmin(11L)).isTrue();
+
+        // 재색인은 운영 조작이라 "GLOBAL grant 아무거나"가 아니라 GLOBAL+ADMIN을 정확히 묻는다.
+        assertThat(org.lastCheck.getUserId()).isEqualTo(11L);
+        assertThat(org.lastCheck.getResourceType()).isEqualTo(ResourceType.GLOBAL);
+        assertThat(org.lastCheck.getResourceId()).isEmpty();
+        assertThat(org.lastCheck.getAction()).isEqualTo(Action.ADMIN);
+    }
+
+    @Test
+    void GLOBAL_VIEWER는_관리자가_아니다() {
+        org.allowed = false;
+        org.effectiveRole = Role.VIEWER;
+
+        assertThat(client.isGlobalAdmin(12L)).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"})
+    void org_service_장애는_거부가_아니라_예외다(String code) {
+        // "모른다"를 "관리자가 아니다"로 바꾸면 장애 중 403이 나가 원인 파악이 어긋난다.
+        org.failure = Status.fromCode(Status.Code.valueOf(code));
+
+        assertThatThrownBy(() -> client.isGlobalAdmin(13L))
+                .isInstanceOf(ServiceUnavailableException.class)
+                .hasMessage("권한 서비스에 연결할 수 없습니다");
+    }
+
     private static Grant grant(ResourceType type, String resourceId) {
         return Grant.newBuilder()
                 .setResourceType(type)
@@ -106,6 +141,9 @@ class GrpcPermissionClientTest {
         final List<Grant> grants = new ArrayList<>();
         volatile Status failure;
         volatile long lastUserId;
+        volatile boolean allowed;
+        volatile Role effectiveRole = Role.ROLE_UNSPECIFIED;
+        volatile CheckPermissionRequest lastCheck;
 
         @Override
         public void listUserGrants(
@@ -117,6 +155,22 @@ class GrpcPermissionClientTest {
                 return;
             }
             responseObserver.onNext(ListUserGrantsResponse.newBuilder().addAllGrants(grants).build());
+            responseObserver.onCompleted();
+        }
+
+        @Override
+        public void checkPermission(
+                CheckPermissionRequest request,
+                StreamObserver<CheckPermissionResponse> responseObserver) {
+            lastCheck = request;
+            if (failure != null) {
+                responseObserver.onError(failure.asRuntimeException());
+                return;
+            }
+            responseObserver.onNext(CheckPermissionResponse.newBuilder()
+                    .setAllowed(allowed)
+                    .setEffectiveRole(effectiveRole)
+                    .build());
             responseObserver.onCompleted();
         }
     }
