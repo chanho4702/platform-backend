@@ -4,6 +4,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.platform.proto.events.v1.EventEnvelope;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -80,6 +81,12 @@ public class RedisStreamEventConsumer {
     private final AtomicBoolean running = new AtomicBoolean();
     private final ExecutorService executor;
 
+    /**
+     * 운영 주입 생성자. 아래 package-private 생성자(테스트가 타이밍을 줄여 쓰는 용도)와 둘이라
+     * {@code @Autowired}가 없으면 스프링이 어느 쪽을 쓸지 못 정하고 기본 생성자로 폴백하다가
+     * "No default constructor found"로 컨텍스트가 통째로 죽는다. 이 표시가 그 선택을 고정한다.
+     */
+    @Autowired
     public RedisStreamEventConsumer(
             StringRedisTemplate redis,
             WikiEventIndexer indexer,
@@ -88,6 +95,7 @@ public class RedisStreamEventConsumer {
         this(redis, indexer, properties, applicationName, DEFAULT_RETRY_IDLE, DEFAULT_READ_BLOCK);
     }
 
+    /** 테스트 전용 — 재시도/블록 타이밍을 줄여 주입한다. 스프링은 이 생성자를 쓰지 않는다. */
     RedisStreamEventConsumer(
             StringRedisTemplate redis,
             WikiEventIndexer indexer,
