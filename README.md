@@ -18,13 +18,14 @@ dev 오프셋 규약은 운영 포트 **+10000**이다(도커 배포판과 공�
 
 ## common-proto — 계약
 
-`src/main/proto/platform/` 아래 세 묶음.
+`src/main/proto/platform/` 아래 네 묶음.
 
 | 패키지 | 내용 |
 |---|---|
 | `platform.org.v1` | `PermissionService` — `CheckPermission` · `ListUserGrants` · `CreateGrant` · `RevokeGrant` |
 | `platform.wiki.v1` | `WikiContentService` — `GetPageContent` · `GetAttachmentMeta` · `ListPageContents`(stream) · `ListAttachments`(stream) |
-| `platform.events.v1` | `EventEnvelope` + 도메인 이벤트(페이지·스페이스·첨부). Redis Streams 페이로드 |
+| `platform.alm.v1` | `AlmContentService` — `GetIssueContent` · `ListIssueContents`(stream) |
+| `platform.events.v1` | `EventEnvelope` + Wiki·ALM 도메인 이벤트. Redis Streams 페이로드 |
 
 **설계 원칙 — 이벤트는 본문을 싣지 않는다.** 소비자는 "무엇이 변했나"만 받고, 내용은 소유 서비스의 gRPC로 가져간다. 큰 페이지가 스트림에 그대로 실리면 Redis 메모리와 재생 비용이 본문 크기에 비례해 커지기 때문이다. `platform.wiki.v1`이 존재하는 이유가 이것이다.
 
@@ -69,9 +70,9 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 
 ## search-service
 
-위키 본문·제목·첨부 파일명을 대상으로 한 전문 검색을, **사용자가 볼 수 있는 스페이스로 한정해서** 돌려준다.
+Wiki 본문·제목·첨부 파일명과 ALM 프로젝트·이슈를 함께 검색하고, **SPACE/PROJECT grant 범위로 결과를 제한**한다.
 
-**RDB를 갖지 않는다.** 색인은 OpenSearch가 소유하고 원본은 wiki-backend가 소유한다 — 재색인으로 언제든 복구되는 파생 데이터뿐이라 별도 DB를 둘 이유가 없다.
+**RDB를 갖지 않는다.** 색인은 OpenSearch가 소유하고 원본은 wiki-backend·alm-backend가 소유한다 — 재색인으로 언제든 복구되는 파생 데이터뿐이라 별도 DB를 둘 이유가 없다.
 
 ### 검색 API — GraphQL
 
@@ -131,7 +132,7 @@ GLOBAL grant 보유자는 필터 없음, 아니면 `terms { space_id: [...] }`�
 - **재시도 횟수는 Redis PEL의 delivery count에서 읽는다.** 별도 상태로 세면 재기동에서 리셋돼 같은 이벤트가 영원히 재시도된다. 상한(기본 5) 초과 시 `platform:events:v1:dlq`로 옮기고 원본 XACK — 둘은 Lua 한 번으로 처리한다(갈리면 이벤트가 복제되거나 사라진다).
 - **색인 실패는 WARN이 아니라 ERROR**로 남긴다. 화면이 멀쩡해서 티가 안 나는 종류의 고장이기 때문이다.
 
-인덱스는 물리 `wiki-page-v1`·`wiki-attachment-v1`, 읽기·쓰기는 별칭 `wiki-page`·`wiki-attachment`로만 한다.
+인덱스는 물리 `wiki-page-v1`·`wiki-attachment-v1`·`alm-issue-v1`, 읽기·쓰기는 별칭 `wiki-page`·`wiki-attachment`·`alm-issue`로만 한다.
 
 ### 재색인 (관리자 REST)
 
@@ -142,7 +143,7 @@ GraphQL이 아니라 REST인 이유는 운영 조작이라 장애 대응 중 cur
 | `POST /api/search/admin/reindex` | `POST /admin/reindex` | 비동기 잡 시작 → `202` + jobId |
 | `GET /api/search/admin/reindex/{jobId}` | `GET /admin/reindex/{jobId}` | 진행 상태 조회 |
 
-새 인덱스 `wiki-page-v{n+1}` 생성 → wiki-backend gRPC 스트림으로 전량 색인 → **별칭 원자 스위치** → 구 인덱스는 남긴다(수동 삭제).
+세 새 인덱스 생성 → wiki-backend·alm-backend gRPC 스트림으로 전량 색인 → **세 별칭 원자 스위치** → 구 인덱스는 남긴다(수동 삭제).
 잡 상태는 메모리에 있다 — 재기동하면 잃지만, 다시 돌리면 되는 조작이라 수용한다.
 
 > **알려진 갭**: 재색인 중 들어온 이벤트를 신·구 인덱스에 함께 쓰는 **dual-write가 없다.** 별칭 전환 시점 부근의 이벤트 창은 후속 과제다.
@@ -161,7 +162,7 @@ $env:JAVA_HOME = 'C:\Program Files\Java\jdk-24'
 
 .\gradlew.bat build                        # 전 모듈 빌드 + 테스트
 .\gradlew.bat :org-service:test            # 모듈 단위 테스트
-.\gradlew.bat :search-service:test         # 64개
+.\gradlew.bat :search-service:test         # 69개
 
 .\gradlew.bat :org-service:bootRun         # :9130 / gRPC :9131
 .\gradlew.bat :search-service:bootRun      # :9140  (OpenSearch 필요)
@@ -179,6 +180,7 @@ $env:JAVA_HOME = 'C:\Program Files\Java\jdk-24'
 | `REDIS_HOST` / `REDIS_DB` | `localhost` / `0` | 이벤트 스트림 (**dev는 db1** — 발행자와 반드시 같아야 한다) |
 | `ORG_GRPC_HOST` / `ORG_GRPC_PORT` | `localhost` / `9131` | 권한 필터 |
 | `WIKI_GRPC_HOST` / `WIKI_GRPC_PORT` | `localhost` / `9111` | 본문·첨부 조달 |
+| `ALM_GRPC_HOST` / `ALM_GRPC_PORT` | `localhost` / `9121` | ALM 이슈 조달 |
 | `EVENTS_ENABLED` / `EVENTS_MAX_RETRIES` | `true` / `5` | 소비 on-off, DLQ 이동 임계 |
 | `AUTH_JWKS_URI` · `PLATFORM_ISSUER` · `PLATFORM_AUDIENCE` | auth-server 계약 | JWT 검증 |
 

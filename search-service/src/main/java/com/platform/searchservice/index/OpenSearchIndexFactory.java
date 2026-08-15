@@ -26,6 +26,7 @@ public class OpenSearchIndexFactory {
 
     public static final String PAGE_MAPPING = "opensearch/wiki-page.json";
     public static final String ATTACHMENT_MAPPING = "opensearch/wiki-attachment.json";
+    public static final String ISSUE_MAPPING = "opensearch/alm-issue.json";
 
     private final OpenSearchClient client;
     private final ObjectMapper objectMapper;
@@ -65,6 +66,7 @@ public class OpenSearchIndexFactory {
     public static String mappingFor(String alias) {
         if (IndexNames.PAGE_ALIAS.equals(alias)) return PAGE_MAPPING;
         if (IndexNames.ATTACHMENT_ALIAS.equals(alias)) return ATTACHMENT_MAPPING;
+        if (IndexNames.ISSUE_ALIAS.equals(alias)) return ISSUE_MAPPING;
         throw new IllegalArgumentException("매핑이 정의되지 않은 별칭입니다: " + alias);
     }
 }

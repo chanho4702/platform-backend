@@ -38,8 +38,10 @@ public class OpenSearchIndexBootstrap implements ApplicationRunner {
         ensureIndex(IndexNames.PAGE_INDEX_V1, IndexNames.PAGE_ALIAS, OpenSearchIndexFactory.PAGE_MAPPING);
         ensureIndex(IndexNames.ATTACHMENT_INDEX_V1, IndexNames.ATTACHMENT_ALIAS,
                 OpenSearchIndexFactory.ATTACHMENT_MAPPING);
-        log.info("OpenSearch 색인 준비 완료: aliases=[{}, {}]",
-                IndexNames.PAGE_ALIAS, IndexNames.ATTACHMENT_ALIAS);
+        ensureIndex(IndexNames.ISSUE_INDEX_V1, IndexNames.ISSUE_ALIAS,
+                OpenSearchIndexFactory.ISSUE_MAPPING);
+        log.info("OpenSearch 색인 준비 완료: aliases=[{}, {}, {}]",
+                IndexNames.PAGE_ALIAS, IndexNames.ATTACHMENT_ALIAS, IndexNames.ISSUE_ALIAS);
     }
 
     private void ensureIndex(String physicalIndex, String alias, String mappingResource) throws IOException {

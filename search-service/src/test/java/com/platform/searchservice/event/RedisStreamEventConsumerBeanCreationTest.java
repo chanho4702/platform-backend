@@ -57,7 +57,7 @@ class RedisStreamEventConsumerBeanCreationTest {
             // 소비 경로가 실제로 타는 지점만 본다 — onApplicationReady()가 돌았다면
             // 제일 먼저 verifyStreamSupport()가 execute(RedisCallback)을 부른다.
             verify(context.getBean(StringRedisTemplate.class), never()).execute(any(RedisCallback.class));
-            verifyNoInteractions(context.getBean(WikiEventIndexer.class));
+            verifyNoInteractions(context.getBean(PlatformEventIndexer.class));
         });
     }
 
@@ -84,8 +84,8 @@ class RedisStreamEventConsumerBeanCreationTest {
         }
 
         @Bean
-        WikiEventIndexer wikiEventIndexer() {
-            return mock(WikiEventIndexer.class);
+        PlatformEventIndexer platformEventIndexer() {
+            return mock(PlatformEventIndexer.class);
         }
 
         @Bean

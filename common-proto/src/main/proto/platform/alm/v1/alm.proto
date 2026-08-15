@@ -1,0 +1,32 @@
+syntax = "proto3";
+package platform.alm.v1;
+option java_multiple_files = true;
+option java_package = "com.platform.proto.alm.v1";
+
+// search-service가 ALM 정본에서 색인할 이슈를 조달하는 내부 계약.
+service AlmContentService {
+  // 단건 이벤트 조달. 이슈가 삭제됐으면 NOT_FOUND.
+  rpc GetIssueContent(GetIssueContentRequest) returns (IssueContent);
+  // 관리자 재색인용 전량 스트리밍. project_id=0이면 전체.
+  rpc ListIssueContents(ListIssueContentsRequest) returns (stream IssueContent);
+}
+
+message GetIssueContentRequest { int64 issue_id = 1; }
+message ListIssueContentsRequest { int64 project_id = 1; }
+
+message IssueContent {
+  int64 issue_id = 1;
+  int64 project_id = 2;
+  string project_key = 3;
+  string project_name = 4;
+  string issue_key = 5;
+  string title = 6;
+  string description = 7;
+  string type = 8;
+  string status = 9;
+  string priority = 10;
+  optional int64 assignee_id = 11;
+  int64 reporter_id = 12;
+  int32 version = 13;
+  int64 updated_at = 14;
+}

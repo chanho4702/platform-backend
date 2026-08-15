@@ -1,0 +1,43 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "analysis": {
+      "tokenizer": {
+        "alm_nori_tokenizer": {
+          "type": "nori_tokenizer",
+          "decompound_mode": "mixed"
+        }
+      },
+      "analyzer": {
+        "alm_korean": {
+          "type": "custom",
+          "tokenizer": "alm_nori_tokenizer",
+          "filter": ["nori_readingform", "lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "docType": { "type": "keyword" },
+      "issueId": { "type": "long" },
+      "projectId": { "type": "long" },
+      "projectKey": { "type": "keyword" },
+      "projectName": { "type": "text", "analyzer": "alm_korean" },
+      "issueKey": { "type": "text", "analyzer": "standard", "fields": { "keyword": { "type": "keyword" } } },
+      "title": { "type": "text", "analyzer": "alm_korean" },
+      "content": { "type": "text", "analyzer": "alm_korean" },
+      "issueType": { "type": "keyword" },
+      "status": { "type": "keyword" },
+      "priority": { "type": "keyword" },
+      "assigneeId": { "type": "long" },
+      "reporterId": { "type": "long" },
+      "version": { "type": "integer" },
+      "updatedAt": { "type": "date", "format": "epoch_millis" }
+    }
+  }
+}

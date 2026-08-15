@@ -14,9 +14,27 @@ public record ReindexJobView(
         boolean aliasSwitched,
         long pagesIndexed,
         long attachmentsIndexed,
+        long issuesIndexed,
         String pageIndex,
         String attachmentIndex,
+        String issueIndex,
         Instant startedAt,
         Instant finishedAt,
         String failure
-) {}
+) {
+    /** Wave C 관리자 응답을 만들던 테스트/호출부와 소스 호환. */
+    public ReindexJobView(
+            String jobId,
+            ReindexState state,
+            boolean aliasSwitched,
+            long pagesIndexed,
+            long attachmentsIndexed,
+            String pageIndex,
+            String attachmentIndex,
+            Instant startedAt,
+            Instant finishedAt,
+            String failure) {
+        this(jobId, state, aliasSwitched, pagesIndexed, attachmentsIndexed, 0L,
+                pageIndex, attachmentIndex, null, startedAt, finishedAt, failure);
+    }
+}

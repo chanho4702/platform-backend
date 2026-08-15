@@ -80,6 +80,19 @@ class GrpcPermissionClientTest {
     }
 
     @Test
+    void SPACE와_PROJECT_grant를_한_번의_조회로_통합한다() {
+        org.grants.add(grant(ResourceType.SPACE, "10"));
+        org.grants.add(grant(ResourceType.PROJECT, "99"));
+
+        SearchAccessScope scope = client.accessibleResources(81L);
+
+        assertThat(scope.all()).isFalse();
+        assertThat(scope.spaceIds()).containsExactly(10L);
+        assertThat(scope.projectIds()).containsExactly(99L);
+        assertThat(org.lastUserId).isEqualTo(81L);
+    }
+
+    @Test
     void 숫자가_아닌_SPACE_resourceId는_건너뛰고_나머지_grant를_쓴다() {
         org.grants.add(grant(ResourceType.SPACE, "not-a-number"));
         org.grants.add(grant(ResourceType.SPACE, "30"));

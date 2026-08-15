@@ -39,6 +39,10 @@ platform:
   wiki-grpc:
     host: ${WIKI_GRPC_HOST:localhost}
     port: ${WIKI_GRPC_PORT:9111}
+  # ALM 이슈 조달용 내부 API
+  alm-grpc:
+    host: ${ALM_GRPC_HOST:localhost}
+    port: ${ALM_GRPC_PORT:9121}
   opensearch:
     uri: ${OPENSEARCH_URI:http://localhost:9200}
   events:

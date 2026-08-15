@@ -2,6 +2,7 @@ package com.platform.searchservice.reindex;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.proto.wiki.v1.AttachmentMeta;
+import com.platform.proto.alm.v1.IssueContent;
 import com.platform.proto.wiki.v1.PageContent;
 import com.platform.proto.wiki.v1.PageStatus;
 import com.platform.proto.wiki.v1.PageType;
@@ -9,11 +10,13 @@ import com.platform.searchservice.common.ConflictException;
 import com.platform.searchservice.common.NotFoundException;
 import com.platform.searchservice.common.ServiceUnavailableException;
 import com.platform.searchservice.content.WikiContentClient;
+import com.platform.searchservice.content.AlmContentClient;
 import com.platform.searchservice.index.IndexNames;
 import com.platform.searchservice.index.OpenSearchIndexBootstrap;
 import com.platform.searchservice.index.OpenSearchIndexFactory;
 import com.platform.searchservice.index.OpenSearchIndexService;
 import com.platform.searchservice.index.PageDoc;
+import com.platform.searchservice.index.IssueDoc;
 import org.apache.hc.core5.http.HttpHost;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
@@ -82,6 +85,7 @@ class ReindexServiceTest {
     static OpenSearchIndexService indexes;
 
     private StubWikiContent content;
+    private StubAlmContent almContent;
 
     @BeforeAll
     static void connect() {
@@ -104,10 +108,12 @@ class ReindexServiceTest {
     void freshCluster() throws Exception {
         // 별칭까지 함께 지워 매 테스트가 "v1 + 별칭" 상태에서 시작하게 한다.
         client.indices().delete(d -> d
-                .index(IndexNames.PAGE_ALIAS + "-v*", IndexNames.ATTACHMENT_ALIAS + "-v*")
+                .index(IndexNames.PAGE_ALIAS + "-v*", IndexNames.ATTACHMENT_ALIAS + "-v*",
+                        IndexNames.ISSUE_ALIAS + "-v*")
                 .ignoreUnavailable(true));
         bootstrap.initialize();
         content = new StubWikiContent();
+        almContent = new StubAlmContent();
     }
 
     @Test
@@ -116,6 +122,7 @@ class ReindexServiceTest {
         content.pages.add(pageContent(1L, 10L, "새 색인 문서", "새 본문", 2_000L));
         content.pages.add(pageContent(2L, 10L, "두 번째", "본문", 2_001L));
         content.attachments.add(attachmentMeta(9L, 1L, 10L, "manual.pdf", 2_002L));
+        almContent.issues.add(issueContent(7001L, 77L, "ALM-12", "검색 이슈", 2_003L));
 
         ReindexService service = service(directExecutor());
         ReindexJobView started = service.start();
@@ -125,11 +132,15 @@ class ReindexServiceTest {
         assertThat(finished.aliasSwitched()).isTrue();
         assertThat(finished.pagesIndexed()).isEqualTo(2);
         assertThat(finished.attachmentsIndexed()).isEqualTo(1);
+        assertThat(finished.issuesIndexed()).isEqualTo(1);
         assertThat(finished.pageIndex()).isEqualTo("wiki-page-v2");
         assertThat(finished.attachmentIndex()).isEqualTo("wiki-attachment-v2");
+        assertThat(finished.issueIndex()).isEqualTo("alm-issue-v2");
 
         assertThat(aliasTarget(IndexNames.PAGE_ALIAS)).isEqualTo("wiki-page-v2");
         assertThat(aliasTarget(IndexNames.ATTACHMENT_ALIAS)).isEqualTo("wiki-attachment-v2");
+        assertThat(aliasTarget(IndexNames.ISSUE_ALIAS)).isEqualTo("alm-issue-v2");
+        assertThat(issueTitlesUnderAlias()).containsExactly("검색 이슈");
         // 구 인덱스는 남긴다 — 되돌릴 수 있어야 하고, 삭제는 운영자의 수동 조작이다(설계 §9).
         assertThat(indexExists("wiki-page-v1")).isTrue();
 
@@ -271,7 +282,7 @@ class ReindexServiceTest {
     }
 
     private ReindexService service(Executor executor) {
-        return new ReindexService(content, indexes, factory, executor);
+        return new ReindexService(content, almContent, indexes, factory, executor);
     }
 
     private static Executor directExecutor() {
@@ -300,6 +311,16 @@ class ReindexServiceTest {
                                 .query(q -> q.matchAll(m -> m))
                                 .size(100),
                         PageDoc.class)
+                .hits().hits().stream().map(hit -> hit.source().title()).toList();
+    }
+
+    private static List<String> issueTitlesUnderAlias() throws Exception {
+        client.indices().refresh(r -> r.index(IndexNames.ISSUE_ALIAS));
+        return client.search(s -> s
+                                .index(IndexNames.ISSUE_ALIAS)
+                                .query(q -> q.matchAll(m -> m))
+                                .size(100),
+                        IssueDoc.class)
                 .hits().hits().stream().map(hit -> hit.source().title()).toList();
     }
 
@@ -338,6 +359,25 @@ class ReindexServiceTest {
                 .setSizeBytes(100L)
                 .setUploadedBy(9L)
                 .setCreatedAt(createdAt)
+                .build();
+    }
+
+    private static IssueContent issueContent(
+            long issueId, long projectId, String issueKey, String title, long updatedAt) {
+        return IssueContent.newBuilder()
+                .setIssueId(issueId)
+                .setProjectId(projectId)
+                .setProjectKey("ALM")
+                .setProjectName("플랫폼 ALM")
+                .setIssueKey(issueKey)
+                .setTitle(title)
+                .setDescription("설명")
+                .setType("BUG")
+                .setStatus("IN_PROGRESS")
+                .setPriority("HIGH")
+                .setReporterId(9L)
+                .setVersion(1)
+                .setUpdatedAt(updatedAt)
                 .build();
     }
 
@@ -381,6 +421,20 @@ class ReindexServiceTest {
         public void streamAttachments(long spaceId, Consumer<AttachmentMeta> consumer) {
             attachments.forEach(consumer);
             if (attachmentFailure != null) throw attachmentFailure;
+        }
+    }
+
+    private static final class StubAlmContent implements AlmContentClient {
+        final List<IssueContent> issues = new ArrayList<>();
+
+        @Override
+        public Optional<IssueContent> getIssue(long issueId) {
+            throw new UnsupportedOperationException("백필 경로는 단건 조달을 쓰지 않는다");
+        }
+
+        @Override
+        public void streamIssues(long projectId, Consumer<IssueContent> consumer) {
+            issues.forEach(consumer);
         }
     }
 }

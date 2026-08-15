@@ -7,7 +7,17 @@ public interface PermissionClient {
      * org-service가 불능이면 빈 목록으로 삼키지 말고 예외를 던져야 한다 — 권한을 모르는 상태의
      * 빈 결과는 "검색해도 안 나오네"로 조용히 오인된다.
      */
-    AccessScope accessibleSpaces(long userId);
+    default SearchAccessScope accessibleResources(long userId) {
+        AccessScope spaces = accessibleSpaces(userId);
+        return spaces.all()
+                ? SearchAccessScope.global()
+                : SearchAccessScope.of(spaces.spaceIds(), java.util.Set.of());
+    }
+
+    /** Wave C 구현체·테스트의 소스 호환 경로. 신규 구현은 accessibleResources를 구현한다. */
+    default AccessScope accessibleSpaces(long userId) {
+        throw new UnsupportedOperationException("accessibleResources를 구현해야 합니다");
+    }
 
     /**
      * 재색인 같은 운영 조작의 인가 — GLOBAL 리소스에 대한 ADMIN 권한(설계 §9).

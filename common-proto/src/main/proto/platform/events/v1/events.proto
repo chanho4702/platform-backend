@@ -20,7 +20,13 @@ message EventEnvelope {
     // v0.3.0 추가 — 10~15는 v0.2.0에서 이미 발행돼 번호를 재사용하지 않는다
     SpaceUpdated space_updated = 16;
     AttachmentDeleted attachment_deleted = 17;
-    // alm 이벤트는 Wave D에서 20번대로 추가
+    // Wave D — ALM 프로젝트·이슈. 18~19는 향후 wiki v1 보강을 위해 비워 둔다.
+    ProjectCreated project_created = 20;
+    ProjectUpdated project_updated = 21;
+    ProjectDeleted project_deleted = 22;
+    IssueCreated issue_created = 23;
+    IssueUpdated issue_updated = 24;
+    IssueDeleted issue_deleted = 25;
   }
 }
 
@@ -34,3 +40,10 @@ message PageDeleted  { int64 page_id = 1; int64 space_id = 2; }
 message AttachmentAdded { int64 attachment_id = 1; int64 page_id = 2; int64 space_id = 3; string filename = 4; }
 // 첨부가 사라졌는데 색인에 남으면 검색 결과에서 404로 이어진다.
 message AttachmentDeleted { int64 attachment_id = 1; int64 page_id = 2; int64 space_id = 3; }
+
+message ProjectCreated { int64 project_id = 1; string key = 2; string name = 3; }
+message ProjectUpdated { int64 project_id = 1; string key = 2; string name = 3; }
+message ProjectDeleted { int64 project_id = 1; }
+message IssueCreated { int64 issue_id = 1; int64 project_id = 2; string issue_key = 3; string title = 4; }
+message IssueUpdated { int64 issue_id = 1; int64 project_id = 2; string issue_key = 3; string title = 4; int32 version = 5; }
+message IssueDeleted { int64 issue_id = 1; int64 project_id = 2; string issue_key = 3; }

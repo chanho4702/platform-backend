@@ -3,12 +3,15 @@ package com.platform.searchservice.reindex;
 import com.platform.searchservice.common.ConflictException;
 import com.platform.searchservice.common.NotFoundException;
 import com.platform.searchservice.content.WikiContentClient;
+import com.platform.searchservice.content.AlmContentClient;
+import com.platform.searchservice.index.AlmDocuments;
 import com.platform.searchservice.index.AttachmentDoc;
 import com.platform.searchservice.index.IndexNames;
 import com.platform.searchservice.index.OpenSearchIndexFactory;
 import com.platform.searchservice.index.OpenSearchIndexService;
 import com.platform.searchservice.index.OpenSearchIndexService.VersionedDoc;
 import com.platform.searchservice.index.PageDoc;
+import com.platform.searchservice.index.IssueDoc;
 import com.platform.searchservice.index.WikiDocuments;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -44,11 +47,13 @@ public class ReindexService {
 
     /** 전량 백필 — 스페이스 한정은 T9의 관리자 계약이 아니다(클라이언트의 내부 능력으로만 남는다). */
     private static final long ALL_SPACES = 0L;
+    private static final long ALL_PROJECTS = 0L;
     private static final int BATCH_SIZE = 500;
     /** 실패한 잡이 남긴 인덱스를 비켜가며 찾을 수 있는 최대 세대 수. */
     private static final int MAX_VERSION_PROBE = 50;
 
     private final WikiContentClient content;
+    private final AlmContentClient almContent;
     private final OpenSearchIndexService indexes;
     private final OpenSearchIndexFactory factory;
     private final Executor executor;
@@ -70,9 +75,10 @@ public class ReindexService {
     @Autowired
     public ReindexService(
             WikiContentClient content,
+            AlmContentClient almContent,
             OpenSearchIndexService indexes,
             OpenSearchIndexFactory factory) {
-        this(content, indexes, factory, Executors.newSingleThreadExecutor(task -> {
+        this(content, almContent, indexes, factory, Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "search-reindex");
             thread.setDaemon(true);
             return thread;
@@ -82,13 +88,36 @@ public class ReindexService {
     /** 테스트가 실행 시점을 통제할 수 있게 실행기를 주입받는 통로. */
     ReindexService(
             WikiContentClient content,
+            AlmContentClient almContent,
             OpenSearchIndexService indexes,
             OpenSearchIndexFactory factory,
             Executor executor) {
         this.content = content;
+        this.almContent = almContent;
         this.indexes = indexes;
         this.factory = factory;
         this.executor = executor;
+    }
+
+    /** Wave C의 wiki 전용 재색인 테스트와 소스 호환. */
+    ReindexService(
+            WikiContentClient content,
+            OpenSearchIndexService indexes,
+            OpenSearchIndexFactory factory,
+            Executor executor) {
+        this(content, new AlmContentClient() {
+            @Override
+            public java.util.Optional<com.platform.proto.alm.v1.IssueContent> getIssue(long issueId) {
+                return java.util.Optional.empty();
+            }
+
+            @Override
+            public void streamIssues(
+                    long projectId,
+                    java.util.function.Consumer<com.platform.proto.alm.v1.IssueContent> consumer) {
+                // Wave C 테스트에는 ALM 정본이 없다.
+            }
+        }, indexes, factory, executor);
     }
 
     @PreDestroy
@@ -114,7 +143,8 @@ public class ReindexService {
         ReindexJob job;
         try {
             Targets targets = resolveTargets();
-            job = new ReindexJob(jobId, targets.pageIndex(), targets.attachmentIndex(), Instant.now());
+            job = new ReindexJob(
+                    jobId, targets.pageIndex(), targets.attachmentIndex(), targets.issueIndex(), Instant.now());
             jobs.put(jobId, job);
             // 여기서 거부당하면(RejectedExecutionException 등) 잡은 시작조차 못 한 것이다.
             executor.execute(() -> run(job, targets));
@@ -150,27 +180,31 @@ public class ReindexService {
         try {
             factory.createIndex(targets.pageIndex(), OpenSearchIndexFactory.PAGE_MAPPING);
             factory.createIndex(targets.attachmentIndex(), OpenSearchIndexFactory.ATTACHMENT_MAPPING);
+            factory.createIndex(targets.issueIndex(), OpenSearchIndexFactory.ISSUE_MAPPING);
 
             backfillPages(job, targets.pageIndex(), fallbackVersion);
             backfillAttachments(job, targets.attachmentIndex(), fallbackVersion);
-            indexes.refresh(targets.pageIndex(), targets.attachmentIndex());
+            backfillIssues(job, targets.issueIndex(), fallbackVersion);
+            indexes.refresh(targets.pageIndex(), targets.attachmentIndex(), targets.issueIndex());
 
             // 여기까지 와야 전환한다 — 하나라도 실패했으면 별칭은 손대지 않는다.
             indexes.switchAliases(Map.of(
                     IndexNames.PAGE_ALIAS, targets.pageIndex(),
-                    IndexNames.ATTACHMENT_ALIAS, targets.attachmentIndex()));
+                    IndexNames.ATTACHMENT_ALIAS, targets.attachmentIndex(),
+                    IndexNames.ISSUE_ALIAS, targets.issueIndex()));
 
             job.succeeded(Instant.now());
             ReindexJobView view = job.view();
-            log.info("재색인 완료: jobId={} pages={} attachments={} pageIndex={} attachmentIndex={}",
-                    view.jobId(), view.pagesIndexed(), view.attachmentsIndexed(),
-                    view.pageIndex(), view.attachmentIndex());
+            log.info("재색인 완료: jobId={} pages={} attachments={} issues={} "
+                            + "pageIndex={} attachmentIndex={} issueIndex={}",
+                    view.jobId(), view.pagesIndexed(), view.attachmentsIndexed(), view.issuesIndexed(),
+                    view.pageIndex(), view.attachmentIndex(), view.issueIndex());
         } catch (Exception e) {
             job.failed(Instant.now(), e.getMessage());
             // 색인 실패는 화면이 멀쩡해서 티가 안 난다(08-02 교훈) — WARN이 아니라 ERROR다.
             log.error("재색인 실패 — 별칭은 구 인덱스에 그대로 둔다. 새 인덱스는 별칭 없이 남으므로 "
-                            + "확인 후 수동 삭제: jobId={} pageIndex={} attachmentIndex={}",
-                    job.jobId(), targets.pageIndex(), targets.attachmentIndex(), e);
+                            + "확인 후 수동 삭제: jobId={} pageIndex={} attachmentIndex={} issueIndex={}",
+                    job.jobId(), targets.pageIndex(), targets.attachmentIndex(), targets.issueIndex(), e);
         } finally {
             activeJobId.compareAndSet(job.jobId(), null);
         }
@@ -201,6 +235,18 @@ public class ReindexService {
         flushAttachments(job, physicalIndex, buffer);
     }
 
+    private void backfillIssues(ReindexJob job, String physicalIndex, long fallbackVersion) {
+        List<VersionedDoc<IssueDoc>> buffer = new ArrayList<>(BATCH_SIZE);
+        almContent.streamIssues(ALL_PROJECTS, issue -> {
+            buffer.add(new VersionedDoc<>(
+                    AlmDocuments.toDocument(issue), externalVersion(issue.getUpdatedAt(), fallbackVersion)));
+            if (buffer.size() >= BATCH_SIZE) {
+                flushIssues(job, physicalIndex, buffer);
+            }
+        });
+        flushIssues(job, physicalIndex, buffer);
+    }
+
     private void flushPages(ReindexJob job, String physicalIndex, List<VersionedDoc<PageDoc>> buffer) {
         if (buffer.isEmpty()) return;
         indexes.bulkIndexPages(physicalIndex, List.copyOf(buffer));
@@ -213,6 +259,13 @@ public class ReindexService {
         if (buffer.isEmpty()) return;
         indexes.bulkIndexAttachments(physicalIndex, List.copyOf(buffer));
         job.addAttachments(buffer.size());
+        buffer.clear();
+    }
+
+    private void flushIssues(ReindexJob job, String physicalIndex, List<VersionedDoc<IssueDoc>> buffer) {
+        if (buffer.isEmpty()) return;
+        indexes.bulkIndexIssues(physicalIndex, List.copyOf(buffer));
+        job.addIssues(buffer.size());
         buffer.clear();
     }
 
@@ -231,11 +284,14 @@ public class ReindexService {
     private Targets resolveTargets() {
         String currentPage = indexes.resolveAliasIndex(IndexNames.PAGE_ALIAS);
         String currentAttachment = indexes.resolveAliasIndex(IndexNames.ATTACHMENT_ALIAS);
+        String currentIssue = indexes.resolveAliasIndex(IndexNames.ISSUE_ALIAS);
         int next;
         try {
             next = Math.max(
                     IndexNames.versionOf(currentPage, IndexNames.PAGE_ALIAS),
-                    IndexNames.versionOf(currentAttachment, IndexNames.ATTACHMENT_ALIAS)) + 1;
+                    Math.max(
+                            IndexNames.versionOf(currentAttachment, IndexNames.ATTACHMENT_ALIAS),
+                            IndexNames.versionOf(currentIssue, IndexNames.ISSUE_ALIAS))) + 1;
         } catch (IllegalArgumentException e) {
             // 요청이 잘못된 게 아니라 클러스터 상태가 관례를 벗어난 것이다 — 400으로 나가면 오해된다.
             throw new IllegalStateException("현재 색인 세대를 읽지 못해 재색인을 시작할 수 없습니다", e);
@@ -245,8 +301,11 @@ public class ReindexService {
             for (int probe = 0; probe < MAX_VERSION_PROBE; probe++, next++) {
                 String pageIndex = IndexNames.versioned(IndexNames.PAGE_ALIAS, next);
                 String attachmentIndex = IndexNames.versioned(IndexNames.ATTACHMENT_ALIAS, next);
-                if (!factory.indexExists(pageIndex) && !factory.indexExists(attachmentIndex)) {
-                    return new Targets(pageIndex, attachmentIndex);
+                String issueIndex = IndexNames.versioned(IndexNames.ISSUE_ALIAS, next);
+                if (!factory.indexExists(pageIndex)
+                        && !factory.indexExists(attachmentIndex)
+                        && !factory.indexExists(issueIndex)) {
+                    return new Targets(pageIndex, attachmentIndex, issueIndex);
                 }
             }
         } catch (IOException e) {
@@ -256,5 +315,5 @@ public class ReindexService {
                 "비어 있는 다음 세대 인덱스 이름을 찾지 못했습니다 — 실패한 재색인이 남긴 인덱스를 정리하세요");
     }
 
-    private record Targets(String pageIndex, String attachmentIndex) {}
+    private record Targets(String pageIndex, String attachmentIndex, String issueIndex) {}
 }

@@ -57,6 +57,10 @@ public class OpenSearchIndexService {
             ctx._source.spaceName = params.spaceName;
             ctx._source.spaceKey = params.spaceKey;
             """;
+    private static final String PROJECT_UPDATE_SCRIPT = """
+            ctx._source.projectName = params.projectName;
+            ctx._source.projectKey = params.projectKey;
+            """;
 
     private final OpenSearchClient client;
 
@@ -98,6 +102,59 @@ public class OpenSearchIndexService {
                         .id(IndexNames.attachmentDocId(attachmentId))
                         .version(occurredAt)
                         .versionType(VersionType.External)));
+    }
+
+    public IndexingResult upsertIssue(IssueDoc document, long occurredAt) {
+        Objects.requireNonNull(document, "document");
+        return versioned("issue upsert", IndexNames.issueDocId(document.issueId()), occurredAt, () ->
+                client.index(i -> i
+                        .index(IndexNames.ISSUE_ALIAS)
+                        .id(IndexNames.issueDocId(document.issueId()))
+                        .document(document)
+                        .version(occurredAt)
+                        .versionType(VersionType.External)));
+    }
+
+    public IndexingResult deleteIssue(long issueId, long occurredAt) {
+        return versioned("issue delete", IndexNames.issueDocId(issueId), occurredAt, () ->
+                client.delete(d -> d
+                        .index(IndexNames.ISSUE_ALIAS)
+                        .id(IndexNames.issueDocId(issueId))
+                        .version(occurredAt)
+                        .versionType(VersionType.External)));
+    }
+
+    /** ProjectDeleted는 자식별 이벤트를 만들지 않으므로 소속 이슈를 파생 색인에서 정리한다. */
+    public long deleteIssuesByProjectId(long projectId) {
+        try {
+            var response = client.deleteByQuery(d -> d
+                    .index(IndexNames.ISSUE_ALIAS)
+                    .query(q -> q.term(t -> t.field("projectId").value(FieldValue.of(projectId))))
+                    .refresh(true));
+            return valueOrZero(response.deleted());
+        } catch (Exception e) {
+            throw failure("issue delete_by_query(project_id)", String.valueOf(projectId), e);
+        }
+    }
+
+    /** 이슈 문서에 비정규화한 프로젝트 표시값을 갱신한다. */
+    public long updateProject(long projectId, String projectName, String projectKey) {
+        Objects.requireNonNull(projectName, "projectName");
+        Objects.requireNonNull(projectKey, "projectKey");
+        try {
+            var response = client.updateByQuery(u -> u
+                    .index(IndexNames.ISSUE_ALIAS)
+                    .query(q -> q.term(t -> t.field("projectId").value(FieldValue.of(projectId))))
+                    .script(s -> s.inline(i -> i
+                            .lang("painless")
+                            .source(PROJECT_UPDATE_SCRIPT)
+                            .params("projectName", JsonData.of(projectName))
+                            .params("projectKey", JsonData.of(projectKey))))
+                    .refresh(true));
+            return valueOrZero(response.updated());
+        } catch (Exception e) {
+            throw failure("update_by_query(project_id)", String.valueOf(projectId), e);
+        }
     }
 
     /** PageDeleted가 개별 AttachmentDeleted를 만들지 않으므로 소속 첨부를 한 번에 정리한다. */
@@ -180,6 +237,10 @@ public class OpenSearchIndexService {
 
     public void bulkIndexAttachments(String physicalIndex, List<VersionedDoc<AttachmentDoc>> documents) {
         bulk(physicalIndex, documents, document -> IndexNames.attachmentDocId(document.attachmentId()));
+    }
+
+    public void bulkIndexIssues(String physicalIndex, List<VersionedDoc<IssueDoc>> documents) {
+        bulk(physicalIndex, documents, document -> IndexNames.issueDocId(document.issueId()));
     }
 
     private <T> void bulk(String physicalIndex, List<VersionedDoc<T>> documents, Function<T, String> id) {

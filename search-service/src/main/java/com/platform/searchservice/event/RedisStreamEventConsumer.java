@@ -68,7 +68,7 @@ public class RedisStreamEventConsumer {
             """.getBytes(StandardCharsets.UTF_8);
 
     private final StringRedisTemplate redis;
-    private final WikiEventIndexer indexer;
+    private final PlatformEventIndexer indexer;
     private final String stream;
     private final byte[] streamKey;
     private final String consumerGroup;
@@ -89,7 +89,7 @@ public class RedisStreamEventConsumer {
     @Autowired
     public RedisStreamEventConsumer(
             StringRedisTemplate redis,
-            WikiEventIndexer indexer,
+            PlatformEventIndexer indexer,
             EventConsumerProperties properties,
             @Value("${spring.application.name:search-service}") String applicationName) {
         this(redis, indexer, properties, applicationName, DEFAULT_RETRY_IDLE, DEFAULT_READ_BLOCK);
@@ -98,7 +98,7 @@ public class RedisStreamEventConsumer {
     /** 테스트 전용 — 재시도/블록 타이밍을 줄여 주입한다. 스프링은 이 생성자를 쓰지 않는다. */
     RedisStreamEventConsumer(
             StringRedisTemplate redis,
-            WikiEventIndexer indexer,
+            PlatformEventIndexer indexer,
             EventConsumerProperties properties,
             String applicationName,
             Duration retryIdle,
@@ -126,6 +126,17 @@ public class RedisStreamEventConsumer {
             thread.setDaemon(true);
             return thread;
         });
+    }
+
+    /** Wave C의 wiki 전용 소비자 테스트와 소스 호환. */
+    RedisStreamEventConsumer(
+            StringRedisTemplate redis,
+            WikiEventIndexer indexer,
+            EventConsumerProperties properties,
+            String applicationName,
+            Duration retryIdle,
+            Duration readBlock) {
+        this(redis, new PlatformEventIndexer(indexer, null), properties, applicationName, retryIdle, readBlock);
     }
 
     @EventListener(ApplicationReadyEvent.class)

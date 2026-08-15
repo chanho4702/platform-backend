@@ -1,7 +1,10 @@
 package com.platform.searchservice.config;
 
+import com.platform.proto.alm.v1.AlmContentServiceGrpc;
 import com.platform.proto.org.v1.PermissionServiceGrpc;
 import com.platform.proto.wiki.v1.WikiContentServiceGrpc;
+import com.platform.searchservice.content.AlmContentClient;
+import com.platform.searchservice.content.GrpcAlmContentClient;
 import com.platform.searchservice.content.GrpcWikiContentClient;
 import com.platform.searchservice.content.WikiContentClient;
 import com.platform.searchservice.permission.GrpcPermissionClient;
@@ -41,6 +44,14 @@ public class GrpcClientConfig {
         return ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
     }
 
+    @Bean(destroyMethod = "shutdown")
+    @Qualifier("almChannel")
+    ManagedChannel almChannel(
+            @Value("${platform.alm-grpc.host}") String host,
+            @Value("${platform.alm-grpc.port}") int port) {
+        return ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+    }
+
     @Bean
     @ConditionalOnMissingBean(PermissionClient.class)
     PermissionClient permissionClient(@Qualifier("orgChannel") ManagedChannel channel) {
@@ -51,5 +62,11 @@ public class GrpcClientConfig {
     @ConditionalOnMissingBean(WikiContentClient.class)
     WikiContentClient wikiContentClient(@Qualifier("wikiChannel") ManagedChannel channel) {
         return new GrpcWikiContentClient(WikiContentServiceGrpc.newBlockingStub(channel));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(AlmContentClient.class)
+    AlmContentClient almContentClient(@Qualifier("almChannel") ManagedChannel channel) {
+        return new GrpcAlmContentClient(AlmContentServiceGrpc.newBlockingStub(channel));
     }
 }

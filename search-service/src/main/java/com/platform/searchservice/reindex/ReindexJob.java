@@ -14,20 +14,27 @@ final class ReindexJob {
     private final String jobId;
     private final String pageIndex;
     private final String attachmentIndex;
+    private final String issueIndex;
     private final Instant startedAt;
     private final AtomicLong pagesIndexed = new AtomicLong();
     private final AtomicLong attachmentsIndexed = new AtomicLong();
+    private final AtomicLong issuesIndexed = new AtomicLong();
 
     private volatile ReindexState state = ReindexState.RUNNING;
     private volatile boolean aliasSwitched;
     private volatile Instant finishedAt;
     private volatile String failure;
 
-    ReindexJob(String jobId, String pageIndex, String attachmentIndex, Instant startedAt) {
+    ReindexJob(String jobId, String pageIndex, String attachmentIndex, String issueIndex, Instant startedAt) {
         this.jobId = jobId;
         this.pageIndex = pageIndex;
         this.attachmentIndex = attachmentIndex;
+        this.issueIndex = issueIndex;
         this.startedAt = startedAt;
+    }
+
+    ReindexJob(String jobId, String pageIndex, String attachmentIndex, Instant startedAt) {
+        this(jobId, pageIndex, attachmentIndex, null, startedAt);
     }
 
     String jobId() {
@@ -48,6 +55,10 @@ final class ReindexJob {
 
     void addAttachments(long count) {
         attachmentsIndexed.addAndGet(count);
+    }
+
+    void addIssues(long count) {
+        issuesIndexed.addAndGet(count);
     }
 
     /**
@@ -78,8 +89,8 @@ final class ReindexJob {
     ReindexJobView view() {
         return new ReindexJobView(
                 jobId, state, aliasSwitched,
-                pagesIndexed.get(), attachmentsIndexed.get(),
-                pageIndex, attachmentIndex,
+                pagesIndexed.get(), attachmentsIndexed.get(), issuesIndexed.get(),
+                pageIndex, attachmentIndex, issueIndex,
                 startedAt, finishedAt, failure);
     }
 }

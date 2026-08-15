@@ -11,6 +11,8 @@ input SearchInput {
   query: String!
   "접근 가능한 스페이스와 교집합을 취한다 — 여기로 권한을 넓힐 수는 없다"
   spaceIds: [ID!]
+  "접근 가능한 ALM 프로젝트와 교집합을 취한다"
+  projectIds: [ID!]
   docTypes: [DocType!]
   "기본은 게시된 문서만. 초안은 색인에는 있고 질의에서 걸러진다"
   includeDrafts: Boolean = false
@@ -28,13 +30,22 @@ type SearchResults {
 type SearchHit {
   id: ID!
   docType: DocType!
-  spaceId: ID!
-  spaceKey: String!
-  spaceName: String!
+  "PAGE/ATTACHMENT에서만 존재"
+  spaceId: ID
+  spaceKey: String
+  spaceName: String
   "ATTACHMENT면 소속 페이지"
   pageId: ID
   "PAGE 문서의 실제 콘텐츠 타입. ATTACHMENT면 null"
   pageType: PageType
+  "ISSUE에서만 존재"
+  projectId: ID
+  projectKey: String
+  projectName: String
+  issueKey: String
+  issueType: String
+  status: String
+  priority: String
   "PAGE"
   title: String
   "ATTACHMENT"
@@ -48,6 +59,7 @@ type SearchHit {
 enum DocType {
   PAGE
   ATTACHMENT
+  ISSUE
 }
 
 enum PageType {

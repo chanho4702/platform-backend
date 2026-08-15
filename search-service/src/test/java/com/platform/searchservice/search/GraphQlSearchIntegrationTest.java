@@ -14,6 +14,7 @@ import com.platform.searchservice.config.GraphQlAccessLogInterceptor;
 import com.platform.searchservice.config.GraphQlConfig;
 import com.platform.searchservice.index.AttachmentDoc;
 import com.platform.searchservice.index.IndexNames;
+import com.platform.searchservice.index.IssueDoc;
 import com.platform.searchservice.index.OpenSearchIndexService;
 import com.platform.searchservice.index.PageDoc;
 import com.platform.searchservice.permission.GrpcPermissionClient;
@@ -94,6 +95,13 @@ class GraphQlSearchIntegrationTest {
                   spaceName
                   pageId
                   pageType
+                  projectId
+                  projectKey
+                  projectName
+                  issueKey
+                  issueType
+                  status
+                  priority
                   title
                   filename
                   highlights
@@ -211,6 +219,35 @@ class GraphQlSearchIntegrationTest {
                 .andExpect(jsonPath("$.data.search.hits[0].pageType").doesNotExist())
                 .andExpect(jsonPath("$.data.search.hits[0].filename").value("guide-manual.pdf"))
                 .andExpect(jsonPath("$.data.search.hits[0].highlights[0]", containsString("<em>")));
+    }
+
+    @Test
+    void ALM_이슈는_PROJECT_권한으로_필터링되고_도메인_필드를_내려준다() throws Exception {
+        permissions.allowProjects(USER, 77L);
+        indexes.upsertIssue(new IssueDoc(
+                IssueDoc.DOC_TYPE, 7001L, 77L, "ALM", "플랫폼 ALM", "ALM-12",
+                "로그인 오류 수정", "인증 서버 연결 문제", "bug", "in_progress", "high",
+                9L, USER, 2, 2_000L), nextVersion());
+        indexes.upsertIssue(new IssueDoc(
+                IssueDoc.DOC_TYPE, 7002L, 88L, "SECRET", "비공개", "SECRET-1",
+                "로그인 오류 비공개", "보이면 안 됨", "task", "todo", "medium",
+                null, USER, 1, 2_000L), nextVersion());
+        refresh();
+
+        Map<String, Object> input = input("로그인 오류");
+        input.put("docTypes", List.of("ISSUE"));
+        performSearch(USER, input)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(1))
+                .andExpect(jsonPath("$.data.search.hits[0].id").value("7001"))
+                .andExpect(jsonPath("$.data.search.hits[0].docType").value("ISSUE"))
+                .andExpect(jsonPath("$.data.search.hits[0].spaceId").doesNotExist())
+                .andExpect(jsonPath("$.data.search.hits[0].projectId").value("77"))
+                .andExpect(jsonPath("$.data.search.hits[0].projectKey").value("ALM"))
+                .andExpect(jsonPath("$.data.search.hits[0].issueKey").value("ALM-12"))
+                .andExpect(jsonPath("$.data.search.hits[0].issueType").value("bug"))
+                .andExpect(jsonPath("$.data.search.hits[0].status").value("in_progress"))
+                .andExpect(jsonPath("$.data.search.hits[0].priority").value("high"));
     }
 
     @Test
@@ -476,6 +513,14 @@ class GraphQlSearchIntegrationTest {
 
         void allowGlobal(long userId) {
             grantsByUser.put(userId, List.of(grant(ResourceType.GLOBAL, "")));
+        }
+
+        void allowProjects(long userId, long... projectIds) {
+            List<Grant> grants = new ArrayList<>();
+            for (long projectId : projectIds) {
+                grants.add(grant(ResourceType.PROJECT, String.valueOf(projectId)));
+            }
+            grantsByUser.put(userId, List.copyOf(grants));
         }
 
         void fail(Status status) {

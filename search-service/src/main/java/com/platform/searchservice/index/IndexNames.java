@@ -15,13 +15,15 @@ public final class IndexNames {
 
     public static final String PAGE_ALIAS = "wiki-page";
     public static final String ATTACHMENT_ALIAS = "wiki-attachment";
+    public static final String ISSUE_ALIAS = "alm-issue";
 
     /** 최초 생성 시의 물리 인덱스 이름. 재색인은 뒤 숫자를 올린다. */
     public static final String PAGE_INDEX_V1 = PAGE_ALIAS + "-v1";
     public static final String ATTACHMENT_INDEX_V1 = ATTACHMENT_ALIAS + "-v1";
+    public static final String ISSUE_INDEX_V1 = ISSUE_ALIAS + "-v1";
 
     /** 검색이 훑는 대상 — 두 별칭을 함께 본다. */
-    public static final String[] SEARCH_TARGETS = { PAGE_ALIAS, ATTACHMENT_ALIAS };
+    public static final String[] SEARCH_TARGETS = { PAGE_ALIAS, ATTACHMENT_ALIAS, ISSUE_ALIAS };
 
     /** `wiki-page` + 2 → `wiki-page-v2`. 재색인이 만드는 다음 세대 인덱스 이름. */
     public static String versioned(String alias, int version) {
@@ -55,5 +57,9 @@ public final class IndexNames {
 
     public static String attachmentDocId(long attachmentId) {
         return String.valueOf(attachmentId);
+    }
+
+    public static String issueDocId(long issueId) {
+        return String.valueOf(issueId);
     }
 }

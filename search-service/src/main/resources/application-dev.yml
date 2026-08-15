@@ -20,6 +20,8 @@ platform:
   # org-service dev가 gRPC도 +10000(:19131)로 띄우므로 내부 호출도 그 포트를 본다.
   org-grpc:
     port: 19131
+  alm-grpc:
+    port: 19121
 
 # issuer는 접속 포트가 아니라 토큰 문자열 계약이라 dev도 기본값(:9000)을 유지한다.
 # wiki-backend dev의 내부 gRPC는 별도 오버라이드 없이 유효 포트 :9111을 유지하므로

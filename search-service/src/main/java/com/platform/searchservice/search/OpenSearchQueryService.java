@@ -2,8 +2,8 @@ package com.platform.searchservice.search;
 
 import com.platform.searchservice.common.ServiceUnavailableException;
 import com.platform.searchservice.index.IndexNames;
-import com.platform.searchservice.permission.AccessScope;
 import com.platform.searchservice.permission.PermissionClient;
+import com.platform.searchservice.permission.SearchAccessScope;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch.OpenSearchClient;
@@ -33,20 +33,36 @@ public class OpenSearchQueryService {
     private final PermissionClient permissions;
 
     public SearchResults search(long userId, SearchInput input) {
-        AccessScope scope = permissions.accessibleSpaces(userId);
+        SearchAccessScope scope = permissions.accessibleResources(userId);
         Set<Long> requestedSpaces = input.requestedSpaceIds();
-        Set<Long> effectiveSpaces = scope.resolveFilter(requestedSpaces);
+        Set<Long> requestedProjects = input.requestedProjectIds();
+        Set<Long> effectiveSpaces = scope.resolveSpaces(requestedSpaces);
+        Set<Long> effectiveProjects = scope.resolveProjects(requestedProjects);
         boolean needsSpaceFilter = !scope.all() || !requestedSpaces.isEmpty();
+        boolean needsProjectFilter = !scope.all() || !requestedProjects.isEmpty();
+        Set<DocType> requestedTypes = input.docTypes() == null || input.docTypes().isEmpty()
+                ? Set.of(DocType.values())
+                : Set.copyOf(input.docTypes());
+        boolean wantsWiki = requestedTypes.contains(DocType.PAGE)
+                || requestedTypes.contains(DocType.ATTACHMENT);
+        boolean wantsIssues = requestedTypes.contains(DocType.ISSUE);
+        boolean wikiAllowed = wantsWiki && (!needsSpaceFilter || !effectiveSpaces.isEmpty());
+        boolean issuesAllowed = wantsIssues && (!needsProjectFilter || !effectiveProjects.isEmpty());
 
-        // terms []는 버전별 해석에 맡기지 않는다. 권한 0건과 요청 교집합 0건은 OpenSearch까지
-        // 보내지 않아야 권한 경계가 질의 구성 실수와 무관하게 닫힌다.
-        if (scope.isEmpty() || (needsSpaceFilter && effectiveSpaces.isEmpty())) {
+        // 한 도메인의 권한이 0건이어도 다른 도메인은 검색할 수 있다. 둘 다 닫혔을 때만 단락한다.
+        if (!wikiAllowed && !issuesAllowed) {
             return SearchResults.empty();
         }
 
         int size = input.normalizedSize();
         int from = safeOffset(input.normalizedPage(), size);
-        Query query = buildQuery(input, needsSpaceFilter ? effectiveSpaces : Set.of());
+        Query query = buildQuery(
+                input,
+                requestedTypes,
+                wikiAllowed,
+                needsSpaceFilter ? effectiveSpaces : Set.of(),
+                issuesAllowed,
+                needsProjectFilter ? effectiveProjects : Set.of());
 
         SearchResponse<Map> response;
         try {
@@ -66,6 +82,9 @@ public class OpenSearchQueryService {
                                             .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))
                                     .fields("filename", f -> f
                                             .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
+                                            .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))
+                                    .fields("issueKey", f -> f
+                                            .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
                                             .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))),
                     Map.class);
         } catch (Exception e) {
@@ -78,29 +97,49 @@ public class OpenSearchQueryService {
         return new SearchResults(toGraphQlInt(total), toGraphQlInt(response.took()), hits);
     }
 
-    private static Query buildQuery(SearchInput input, Set<Long> effectiveSpaces) {
-        List<Query> filters = new ArrayList<>();
-        if (!effectiveSpaces.isEmpty()) {
-            filters.add(terms("spaceId", effectiveSpaces.stream().map(spaceId -> FieldValue.of(spaceId.longValue())).toList()));
-        }
-        if (input.docTypes() != null && !input.docTypes().isEmpty()) {
-            filters.add(terms("docType", input.docTypes().stream()
-                    .map(type -> FieldValue.of(type.name()))
-                    .toList()));
-        }
-
+    private static Query buildQuery(
+            SearchInput input,
+            Set<DocType> requestedTypes,
+            boolean wikiAllowed,
+            Set<Long> effectiveSpaces,
+            boolean issuesAllowed,
+            Set<Long> effectiveProjects) {
         Query textMatch = Query.of(q -> q.multiMatch(m -> m
-                // 제목을 본문보다 명시적으로 높인다. filename은 첨부 인덱스에서만 존재한다.
-                .fields("title^3", "content", "filename")
+                .fields("issueKey^4", "title^3", "projectName^2", "content", "filename")
                 .query(input.query())));
+
+        List<Query> domainBranches = new ArrayList<>();
+        if (wikiAllowed) {
+            List<FieldValue> wikiTypes = requestedTypes.stream()
+                    .filter(type -> type == DocType.PAGE || type == DocType.ATTACHMENT)
+                    .map(type -> FieldValue.of(type.name()))
+                    .toList();
+            domainBranches.add(Query.of(q -> q.bool(b -> {
+                b.filter(terms("docType", wikiTypes));
+                if (!effectiveSpaces.isEmpty()) {
+                    b.filter(terms("spaceId", effectiveSpaces.stream().map(FieldValue::of).toList()));
+                }
+                if (!input.draftsIncluded()) {
+                    b.mustNot(n -> n.term(t -> t.field("status").value(FieldValue.of(DRAFT_STATUS))));
+                }
+                return b;
+            })));
+        }
+        if (issuesAllowed) {
+            domainBranches.add(Query.of(q -> q.bool(b -> {
+                b.filter(terms("docType", List.of(FieldValue.of(DocType.ISSUE.name()))));
+                if (!effectiveProjects.isEmpty()) {
+                    b.filter(terms("projectId", effectiveProjects.stream().map(FieldValue::of).toList()));
+                }
+                return b;
+            })));
+        }
 
         return Query.of(q -> q.bool(b -> {
             b.must(textMatch);
-            if (!filters.isEmpty()) b.filter(filters);
-            if (!input.draftsIncluded()) {
-                // 첨부에는 status 필드가 없으므로 이 must_not은 페이지 초안에만 걸린다.
-                b.mustNot(n -> n.term(t -> t.field("status").value(FieldValue.of(DRAFT_STATUS))));
-            }
+            b.filter(f -> f.bool(domains -> domains
+                    .should(domainBranches)
+                    .minimumShouldMatch("1")));
             return b;
         }));
     }
@@ -114,12 +153,14 @@ public class OpenSearchQueryService {
         if (source == null) throw new IllegalStateException("검색 hit에 _source가 없습니다: " + hit.id());
 
         DocType docType = DocType.valueOf(text(source, "docType"));
-        String id = docType == DocType.PAGE
-                ? numberText(source, "pageId")
-                : numberText(source, "attachmentId");
+        String id = switch (docType) {
+            case PAGE -> numberText(source, "pageId");
+            case ATTACHMENT -> numberText(source, "attachmentId");
+            case ISSUE -> numberText(source, "issueId");
+        };
         String pageId = docType == DocType.ATTACHMENT ? numberText(source, "pageId") : null;
         PageType pageType = docType == DocType.PAGE ? pageType(source) : null;
-        List<String> highlights = List.of("title", "content", "filename").stream()
+        List<String> highlights = List.of("title", "content", "filename", "issueKey").stream()
                 .flatMap(field -> hit.highlight().getOrDefault(field, List.of()).stream())
                 .toList();
 
@@ -127,11 +168,18 @@ public class OpenSearchQueryService {
         return new SearchHit(
                 id,
                 docType,
-                numberText(source, "spaceId"),
-                text(source, "spaceKey"),
-                text(source, "spaceName"),
+                docType == DocType.ISSUE ? null : numberText(source, "spaceId"),
+                docType == DocType.ISSUE ? null : text(source, "spaceKey"),
+                docType == DocType.ISSUE ? null : text(source, "spaceName"),
                 pageId,
                 pageType,
+                docType == DocType.ISSUE ? numberText(source, "projectId") : null,
+                docType == DocType.ISSUE ? text(source, "projectKey") : null,
+                docType == DocType.ISSUE ? text(source, "projectName") : null,
+                docType == DocType.ISSUE ? text(source, "issueKey") : null,
+                docType == DocType.ISSUE ? text(source, "issueType") : null,
+                docType == DocType.ISSUE ? text(source, "status") : null,
+                docType == DocType.ISSUE ? text(source, "priority") : null,
                 nullableText(source, "title"),
                 nullableText(source, "filename"),
                 highlights,

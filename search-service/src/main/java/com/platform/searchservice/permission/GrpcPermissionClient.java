@@ -34,20 +34,25 @@ public class GrpcPermissionClient implements PermissionClient {
     }
 
     @Override
-    public AccessScope accessibleSpaces(long userId) {
+    public SearchAccessScope accessibleResources(long userId) {
         try {
             ListUserGrantsResponse res = stub.listUserGrants(
                     ListUserGrantsRequest.newBuilder().setUserId(userId).build()); // UNSPECIFIED = 전체
             boolean global = res.getGrantsList().stream()
                     .anyMatch(g -> g.getResourceType() == ResourceType.GLOBAL);
-            if (global) return AccessScope.global();
+            if (global) return SearchAccessScope.global();
 
-            Set<Long> ids = res.getGrantsList().stream()
+            Set<Long> spaces = res.getGrantsList().stream()
                     .filter(g -> g.getResourceType() == ResourceType.SPACE)
-                    .map(g -> parseSpaceId(g.getResourceId()))
+                    .map(g -> parseResourceId(ResourceType.SPACE, g.getResourceId()))
                     .filter(java.util.Objects::nonNull)
                     .collect(Collectors.toSet());
-            return AccessScope.of(ids);
+            Set<Long> projects = res.getGrantsList().stream()
+                    .filter(g -> g.getResourceType() == ResourceType.PROJECT)
+                    .map(g -> parseResourceId(ResourceType.PROJECT, g.getResourceId()))
+                    .filter(java.util.Objects::nonNull)
+                    .collect(Collectors.toSet());
+            return SearchAccessScope.of(spaces, projects);
         } catch (Exception e) {
             // 전송 장애든 아니든 검색은 503으로 끝낸다. wiki-backend는 비-가용성 오류를
             // fail-closed(빈 목록)로 삼켰지만, 검색에서 빈 목록은 "결과 없음"과 구분되지 않아
@@ -55,6 +60,12 @@ public class GrpcPermissionClient implements PermissionClient {
             log.error("권한 조회 실패 — 검색 503 전파: user={}", userId, e);
             throw new ServiceUnavailableException("권한 서비스에 연결할 수 없습니다");
         }
+    }
+
+    @Override
+    public AccessScope accessibleSpaces(long userId) {
+        SearchAccessScope scope = accessibleResources(userId);
+        return scope.all() ? AccessScope.global() : AccessScope.of(scope.spaceIds());
     }
 
     @Override
@@ -75,11 +86,11 @@ public class GrpcPermissionClient implements PermissionClient {
     }
 
     /** resourceId는 문자열 계약이다 — 숫자가 아닌 값이 섞여도 검색 전체를 죽이지 않는다. */
-    private static Long parseSpaceId(String raw) {
+    private static Long parseResourceId(ResourceType type, String raw) {
         try {
             return Long.parseLong(raw);
         } catch (NumberFormatException e) {
-            log.warn("SPACE grant의 resourceId가 숫자가 아니다 — 건너뜀: {}", raw);
+            log.warn("{} grant의 resourceId가 숫자가 아니다 — 건너뜀: {}", type, raw);
             return null;
         }
     }

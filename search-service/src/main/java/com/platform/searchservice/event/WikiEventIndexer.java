@@ -34,6 +34,9 @@ public class WikiEventIndexer {
                     event.getAttachmentAdded().getAttachmentId(), occurredAt);
             case ATTACHMENT_DELETED -> indexes.deleteAttachment(
                     event.getAttachmentDeleted().getAttachmentId(), occurredAt);
+            case PROJECT_CREATED, PROJECT_UPDATED, PROJECT_DELETED,
+                    ISSUE_CREATED, ISSUE_UPDATED, ISSUE_DELETED -> throw new IllegalArgumentException(
+                    "ALM 이벤트가 wiki 색인기로 라우팅됐습니다: " + event.getPayloadCase());
             case PAYLOAD_NOT_SET -> throw new IllegalArgumentException(
                     "payload가 없는 EventEnvelope: eventId=" + event.getEventId());
         }

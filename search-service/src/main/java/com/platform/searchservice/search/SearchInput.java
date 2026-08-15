@@ -8,6 +8,7 @@ import java.util.Set;
 public record SearchInput(
         String query,
         List<String> spaceIds,
+        List<String> projectIds,
         List<DocType> docTypes,
         Boolean includeDrafts,
         Integer page,
@@ -16,14 +17,33 @@ public record SearchInput(
     static final int DEFAULT_SIZE = 20;
     static final int MAX_SIZE = 100;
 
+    /** Wave C 호출부와 소스 호환 — 프로젝트 필터가 없던 기존 Java 테스트/클라이언트용. */
+    public SearchInput(
+            String query,
+            List<String> spaceIds,
+            List<DocType> docTypes,
+            Boolean includeDrafts,
+            Integer page,
+            Integer size) {
+        this(query, spaceIds, List.of(), docTypes, includeDrafts, page, size);
+    }
+
     public Set<Long> requestedSpaceIds() {
-        if (spaceIds == null || spaceIds.isEmpty()) return Set.of();
+        return parseIds(spaceIds, "spaceIds");
+    }
+
+    public Set<Long> requestedProjectIds() {
+        return parseIds(projectIds, "projectIds");
+    }
+
+    private static Set<Long> parseIds(List<String> ids, String field) {
+        if (ids == null || ids.isEmpty()) return Set.of();
         Set<Long> parsed = new LinkedHashSet<>();
-        for (String raw : spaceIds) {
+        for (String raw : ids) {
             try {
                 parsed.add(Long.parseLong(raw));
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("spaceIds는 숫자 ID여야 합니다: " + raw, e);
+                throw new IllegalArgumentException(field + "는 숫자 ID여야 합니다: " + raw, e);
             }
         }
         return Set.copyOf(parsed);
