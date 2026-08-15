@@ -93,6 +93,7 @@ class GraphQlSearchIntegrationTest {
                   spaceKey
                   spaceName
                   pageId
+                  pageType
                   title
                   filename
                   highlights
@@ -157,8 +158,22 @@ class GraphQlSearchIntegrationTest {
                 .andExpect(jsonPath("$.data.search.total").value(1))
                 .andExpect(jsonPath("$.data.search.tookMs").isNumber())
                 .andExpect(jsonPath("$.data.search.hits[0].id").value("1001"))
+                .andExpect(jsonPath("$.data.search.hits[0].pageType").value("PAGE"))
                 .andExpect(jsonPath("$.data.search.hits[0].score").isNumber());
         assertThat(permissions.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void 폴더_hit은_PAGE와_구분되는_pageType을_내려준다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        indexFolder(1151L, 10L, "운영 런북 폴더");
+        refresh();
+
+        performSearch(USER, input("운영 런북"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(1))
+                .andExpect(jsonPath("$.data.search.hits[0].docType").value("PAGE"))
+                .andExpect(jsonPath("$.data.search.hits[0].pageType").value("FOLDER"));
     }
 
     @Test
@@ -187,13 +202,15 @@ class GraphQlSearchIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.search.total").value(2));
 
-        Map<String, Object> input = input("guide");
+        Map<String, Object> input = input("manual");
         input.put("docTypes", List.of("ATTACHMENT"));
         performSearch(USER, input)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.search.total").value(1))
                 .andExpect(jsonPath("$.data.search.hits[0].docType").value("ATTACHMENT"))
-                .andExpect(jsonPath("$.data.search.hits[0].filename").value("guide-manual.pdf"));
+                .andExpect(jsonPath("$.data.search.hits[0].pageType").doesNotExist())
+                .andExpect(jsonPath("$.data.search.hits[0].filename").value("guide-manual.pdf"))
+                .andExpect(jsonPath("$.data.search.hits[0].highlights[0]", containsString("<em>")));
     }
 
     @Test
@@ -377,6 +394,12 @@ class GraphQlSearchIntegrationTest {
         indexes.upsertPage(new PageDoc(
                 PageDoc.DOC_TYPE, pageId, spaceId, "space-" + spaceId, "스페이스 " + spaceId,
                 title, content, "page", status, 1, USER, 1_000L), nextVersion());
+    }
+
+    private void indexFolder(long pageId, long spaceId, String title) {
+        indexes.upsertPage(new PageDoc(
+                PageDoc.DOC_TYPE, pageId, spaceId, "space-" + spaceId, "스페이스 " + spaceId,
+                title, "", "folder", "published", 1, USER, 1_000L), nextVersion());
     }
 
     private static long nextVersion() {

@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -61,6 +62,9 @@ public class OpenSearchQueryService {
                                             .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
                                             .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))
                                     .fields("content", f -> f
+                                            .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
+                                            .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))
+                                    .fields("filename", f -> f
                                             .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
                                             .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))),
                     Map.class);
@@ -114,7 +118,8 @@ public class OpenSearchQueryService {
                 ? numberText(source, "pageId")
                 : numberText(source, "attachmentId");
         String pageId = docType == DocType.ATTACHMENT ? numberText(source, "pageId") : null;
-        List<String> highlights = List.of("title", "content").stream()
+        PageType pageType = docType == DocType.PAGE ? pageType(source) : null;
+        List<String> highlights = List.of("title", "content", "filename").stream()
                 .flatMap(field -> hit.highlight().getOrDefault(field, List.of()).stream())
                 .toList();
 
@@ -126,11 +131,18 @@ public class OpenSearchQueryService {
                 text(source, "spaceKey"),
                 text(source, "spaceName"),
                 pageId,
+                pageType,
                 nullableText(source, "title"),
                 nullableText(source, "filename"),
                 highlights,
                 instantText(source.get("updatedAt")),
                 score == null ? 0.0 : score);
+    }
+
+    private static PageType pageType(Map<String, Object> source) {
+        String value = nullableText(source, "type");
+        // type 필드 도입 전 만들어진 물리 인덱스도 읽기 별칭 롤백 후보가 될 수 있어 PAGE로 호환한다.
+        return value == null ? PageType.PAGE : PageType.valueOf(value.toUpperCase(Locale.ROOT));
     }
 
     private static int safeOffset(int page, int size) {

@@ -10,6 +10,7 @@ public record SearchHit(
         String spaceKey,
         String spaceName,
         String pageId,
+        PageType pageType,
         String title,
         String filename,
         List<String> highlights,

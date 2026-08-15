@@ -33,6 +33,8 @@ type SearchHit {
   spaceName: String!
   "ATTACHMENT면 소속 페이지"
   pageId: ID
+  "PAGE 문서의 실제 콘텐츠 타입. ATTACHMENT면 null"
+  pageType: PageType
   "PAGE"
   title: String
   "ATTACHMENT"
@@ -46,4 +48,9 @@ type SearchHit {
 enum DocType {
   PAGE
   ATTACHMENT
+}
+
+enum PageType {
+  PAGE
+  FOLDER
 }
