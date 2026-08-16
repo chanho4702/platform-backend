@@ -2,7 +2,7 @@
 
 ALM·Wiki 플랫폼의 **횡단 서비스 멀티모듈 repo**. 도메인 서비스(wiki-backend 등)가 공통으로 기대는 것들이 여기 모여 있다.
 
-> 별도 git repo: `github.com/chanho4702/platform-backend` (브랜치 `main`). 우산 repo(`chanho4702/infra-settings`)에서는 gitignore 됨.
+> 별도 git repo: [chanho4702/platform-backend](https://github.com/chanho4702/platform-backend). 전체 구성은 [infra-settings](https://github.com/chanho4702/infra-settings) 참고.
 
 ## 모듈
 
@@ -83,7 +83,8 @@ type Query { search(input: SearchInput!): SearchResults! }
 
 input SearchInput {
   query: String!
-  spaceIds: [ID!]            # 접근 가능한 스페이스와 교집합 — 여기로 권한을 넓힐 수는 없다
+  spaceIds: [ID!]            # 접근 가능한 스페이스와 교집합
+  projectIds: [ID!]          # 접근 가능한 ALM 프로젝트와 교집합
   docTypes: [DocType!]
   includeDrafts: Boolean = false
   page: Int = 0
@@ -93,25 +94,41 @@ input SearchInput {
 type SearchResults { total: Int!, tookMs: Int!, hits: [SearchHit!]! }
 
 type SearchHit {
-  id: ID!  docType: DocType!  spaceId: ID!  spaceKey: String!  spaceName: String!
-  pageId: ID       # ATTACHMENT면 소속 페이지
-  title: String    # PAGE
-  filename: String # ATTACHMENT
+  id: ID!
+  docType: DocType!
+  spaceId: ID            # PAGE / ATTACHMENT
+  spaceKey: String
+  spaceName: String
+  pageId: ID             # ATTACHMENT면 소속 페이지
+  pageType: PageType     # PAGE 문서의 실제 콘텐츠 타입
+  projectId: ID          # ISSUE
+  projectKey: String
+  projectName: String
+  issueKey: String
+  issueType: String
+  status: String
+  priority: String
+  title: String          # PAGE / ISSUE
+  filename: String       # ATTACHMENT
   highlights: [String!]!  updatedAt: String  score: Float!
 }
 
-enum DocType { PAGE, ATTACHMENT }
+enum DocType { PAGE, ATTACHMENT, ISSUE }
+enum PageType { PAGE, FOLDER }
 ```
 
 계약의 정본은 `search-service/src/main/resources/graphql/schema.graphqls`다.
 
 ### 권한 필터 (fail-closed)
 
-JWT `sub` → `userId` → org-service **`ListUserGrants(user_id)`** gRPC 호출.
-`resource_type`은 **지정하지 않는다**(UNSPECIFIED = 전체) — 응답에서 GLOBAL 여부를 먼저 보고, 없으면 `SPACE` grant만 골라 스페이스 id 집합을 만든다. SPACE로 좁혀 물으면 GLOBAL 보유자를 판별할 수 없기 때문이다.
-GLOBAL grant 보유자는 필터 없음, 아니면 `terms { space_id: [...] }`를 질의에 AND로 건다.
+JWT `sub` → `userId` → org-service **`ListUserGrants(user_id)`** gRPC 호출 한 번으로
+GLOBAL 여부와 `SPACE`·`PROJECT` grant를 함께 계산한다. `resource_type`은 지정하지 않는다
+(UNSPECIFIED = 전체). 한 종류로 좁혀 물으면 GLOBAL 보유자와 다른 도메인 권한을 함께 판별할 수 없기 때문이다.
+GLOBAL grant 보유자는 필터가 없고, 그 외 사용자는 Wiki 문서에 `space_id`, ALM 이슈에
+`project_id` 필터를 각각 적용한다.
 
-- **필터는 서버가 건다.** 클라이언트가 보낸 `spaceIds`는 접근 가능 집합과 **교집합**만 취한다(좁히기만 가능, 넓히기 불가).
+- **필터는 서버가 건다.** 클라이언트가 보낸 `spaceIds`·`projectIds`는 각 접근 가능 집합과
+  **교집합**만 취한다(좁히기만 가능, 넓히기 불가).
 - **org-service 불능 시 503을 전파한다**(fail-closed). 권한을 모르는 상태에서 빈 결과를 주면 "검색해도 안 나오네"로 조용히 오인되기 때문이다.
 - grant 조회 캐시는 없다(요청당 gRPC 1회).
 
@@ -126,6 +143,11 @@ GLOBAL grant 보유자는 필터 없음, 아니면 `terms { space_id: [...] }`�
 | `SpaceUpdated` | `update_by_query`로 비정규화된 `space_name`·`space_key` 갱신 |
 | `SpaceDeleted` | 두 인덱스 모두 `delete_by_query(space_id)` |
 | `AttachmentAdded` / `AttachmentDeleted` | 첨부 문서 upsert / 삭제 |
+| `ProjectCreated` | 프로젝트 자체는 검색 문서가 아니므로 처리 없음 |
+| `ProjectUpdated` | 해당 프로젝트 이슈의 비정규화된 프로젝트 정보 갱신 |
+| `ProjectDeleted` | 프로젝트의 모든 이슈 문서 삭제 |
+| `IssueCreated` / `IssueUpdated` | alm-backend gRPC로 원문 조달 → upsert |
+| `IssueDeleted` | 이슈 문서 삭제 |
 
 - **멱등** — 문서 `_id`가 도메인 키라 같은 이벤트를 두 번 받아도 결과가 같다.
 - **순서 역전 방어** — `version_type=external`, `version = occurred_at`(epoch millis). 늦게 도착한 오래된 이벤트는 OpenSearch가 `version_conflict`로 거부하며, 이는 정상 흐름으로 취급해 ACK한다.
@@ -162,7 +184,7 @@ $env:JAVA_HOME = 'C:\Program Files\Java\jdk-24'
 
 .\gradlew.bat build                        # 전 모듈 빌드 + 테스트
 .\gradlew.bat :org-service:test            # 모듈 단위 테스트
-.\gradlew.bat :search-service:test         # 69개
+.\gradlew.bat :search-service:test
 
 .\gradlew.bat :org-service:bootRun         # :9130 / gRPC :9131
 .\gradlew.bat :search-service:bootRun      # :9140  (OpenSearch 필요)
