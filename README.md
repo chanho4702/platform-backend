@@ -1,5 +1,11 @@
 # platform-backend
 
+[![CI](https://github.com/chanho4702/platform-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/chanho4702/platform-backend/actions/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java-24-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.6-6DB33F?logo=springboot&logoColor=white)
+![gRPC](https://img.shields.io/badge/gRPC-Protobuf-244C5A?logo=google&logoColor=white)
+![OpenSearch](https://img.shields.io/badge/OpenSearch-2.19.0-005EB8?logo=opensearch&logoColor=white)
+
 ALM·Wiki 플랫폼의 **횡단 서비스 멀티모듈 repo**. 도메인 서비스(wiki-backend 등)가 공통으로 기대는 것들이 여기 모여 있다.
 
 > 별도 git repo: [chanho4702/platform-backend](https://github.com/chanho4702/platform-backend). 전체 구성은 [infra-settings](https://github.com/chanho4702/infra-settings) 참고.
