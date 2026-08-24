@@ -27,6 +27,10 @@ service WikiContentService {
   rpc ListPageContents(ListPageContentsRequest) returns (stream PageContent);
   // 첨부 백필. space_id=0이면 전 스페이스.
   rpc ListAttachments(ListAttachmentsRequest) returns (stream AttachmentMeta);
+
+  // 검색 결과 권한 후필터(W18) — 사용자 기준으로 볼 수 있는 페이지만 남긴다.
+  // 페이지 제한(page_restriction)의 단일 진실은 wiki가 소유하므로 판정을 wiki에 위임한다.
+  rpc FilterVisiblePages(FilterVisiblePagesRequest) returns (FilterVisiblePagesResponse);
 }
 
 enum PageType { PAGE_TYPE_UNSPECIFIED = 0; PAGE = 1; FOLDER = 2; }
@@ -69,3 +73,9 @@ message AttachmentMeta {
   string space_key = 9;
   string space_name = 10;
 }
+
+message FilterVisiblePagesRequest {
+  int64 user_id = 1;
+  repeated int64 page_ids = 2;
+}
+message FilterVisiblePagesResponse { repeated int64 visible_page_ids = 1; }

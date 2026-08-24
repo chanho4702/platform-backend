@@ -30,6 +30,7 @@ public class OpenSearchQueryService {
 
     private final OpenSearchClient client;
     private final PermissionClient permissions;
+    private final com.platform.searchservice.content.WikiContentClient wikiContent;
 
     public SearchResults search(long userId, SearchInput input) {
         AccessScope scope = permissions.accessibleSpaces(userId);
@@ -71,7 +72,12 @@ public class OpenSearchQueryService {
 
         long total = response.hits().total() == null ? 0L : response.hits().total().value();
         List<SearchHit> hits = response.hits().hits().stream().map(this::toSearchHit).toList();
-        return new SearchResults(toGraphQlInt(total), toGraphQlInt(response.took()), hits);
+
+        // W18 페이지 제한 후필터 — 색인은 제한을 모른다(변경 시 재색인 불가피 회피, 설계 §4).
+        // 질의 시점에 wiki가 판정한다. wiki 불능 시 결과를 여는 대신 검색을 닫는다(fail-closed).
+        List<SearchHit> visibleHits = filterRestricted(userId, hits);
+        total -= (hits.size() - visibleHits.size()); // 이 페이지에서 걸러진 만큼 보정("N건 이상" 표기 허용)
+        return new SearchResults(toGraphQlInt(Math.max(total, 0)), toGraphQlInt(response.took()), visibleHits);
     }
 
     private static Query buildQuery(SearchInput input, Set<Long> effectiveSpaces) {
@@ -103,6 +109,31 @@ public class OpenSearchQueryService {
 
     private static Query terms(String field, List<FieldValue> values) {
         return Query.of(q -> q.terms(t -> t.field(field).terms(v -> v.value(values))));
+    }
+
+    /** PAGE는 자신, ATTACHMENT는 소속 페이지 기준으로 wiki 권한 필터를 통과해야 남는다. */
+    private List<SearchHit> filterRestricted(long userId, List<SearchHit> hits) {
+        Set<Long> pageIds = new java.util.HashSet<>();
+        for (SearchHit h : hits) {
+            Long pid = ownerPageId(h);
+            if (pid != null) pageIds.add(pid);
+        }
+        if (pageIds.isEmpty()) return hits;
+        Set<Long> visible = wikiContent.filterVisiblePages(userId, pageIds);
+        return hits.stream().filter(h -> {
+            Long pid = ownerPageId(h);
+            return pid == null || visible.contains(pid);
+        }).toList();
+    }
+
+    private static Long ownerPageId(SearchHit h) {
+        String raw = h.docType() == DocType.PAGE ? h.id() : h.pageId();
+        if (raw == null) return null;
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private SearchHit toSearchHit(Hit<Map> hit) {

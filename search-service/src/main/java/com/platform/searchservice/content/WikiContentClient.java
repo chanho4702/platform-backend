@@ -34,4 +34,10 @@ public interface WikiContentClient {
 
     /** 백필 — 첨부 전량 스트리밍. spaceId=0이면 전 스페이스. */
     void streamAttachments(long spaceId, Consumer<AttachmentMeta> consumer);
+
+    /**
+     * 검색 결과 권한 후필터(W18) — 사용자가 볼 수 있는 페이지 id만 남긴다.
+     * 실패는 열지 않는다(제한 페이지 누출 방지) — 호출부가 ServiceUnavailable로 닫는다.
+     */
+    java.util.Set<Long> filterVisiblePages(long userId, java.util.Collection<Long> pageIds);
 }

@@ -133,6 +133,7 @@ class GraphQlSearchIntegrationTest {
     @Autowired OpenSearchClient client;
     @Autowired OpenSearchIndexService indexes;
     @Autowired TestPermissionService permissions;
+    @Autowired TestWikiVisibility wikiVisibility;
 
     private MockMvc mvc;
 
@@ -140,6 +141,7 @@ class GraphQlSearchIntegrationTest {
     void setUp() throws Exception {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         permissions.reset();
+        wikiVisibility.hidden.clear();
         client.deleteByQuery(d -> d
                 .index(List.of(IndexNames.SEARCH_TARGETS))
                 .query(q -> q.matchAll(m -> m))
@@ -159,6 +161,22 @@ class GraphQlSearchIntegrationTest {
                 .andExpect(jsonPath("$.data.search.hits[0].id").value("1001"))
                 .andExpect(jsonPath("$.data.search.hits[0].score").isNumber());
         assertThat(permissions.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void 페이지_제한_후필터가_히트를_거르고_total을_보정한다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        indexPage(1901L, 10L, "제한문서 검색어", "본문", "published");
+        indexPage(1902L, 10L, "공개문서 검색어", "본문", "published");
+        refresh();
+
+        // wiki 판정이 1901을 숨긴다(W18 페이지 제한) — 히트·total 모두에서 사라져야 한다
+        wikiVisibility.hidden.add(1901L);
+        performSearch(USER, input("검색어"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(1))
+                .andExpect(jsonPath("$.data.search.hits.length()").value(1))
+                .andExpect(jsonPath("$.data.search.hits[0].id").value("1902"));
     }
 
     @Test
@@ -430,6 +448,50 @@ class GraphQlSearchIntegrationTest {
                 @Qualifier("testPermissionChannel") ManagedChannel channel) {
             return new GrpcPermissionClient(PermissionServiceGrpc.newBlockingStub(channel));
         }
+
+        @Bean
+        TestWikiVisibility testWikiVisibility() {
+            return new TestWikiVisibility();
+        }
+
+        /** W18 후필터 경유 스텁 — hidden에 넣은 페이지만 걸러진다(기본 전부 보임). */
+        @Bean
+        @Primary
+        com.platform.searchservice.content.WikiContentClient testWikiContent(TestWikiVisibility visibility) {
+            return new com.platform.searchservice.content.WikiContentClient() {
+                @Override
+                public java.util.Optional<com.platform.proto.wiki.v1.PageContent> getPage(long pageId) {
+                    throw new UnsupportedOperationException("검색 경로는 본문 조달을 쓰지 않는다");
+                }
+
+                @Override
+                public java.util.Optional<com.platform.proto.wiki.v1.AttachmentMeta> getAttachment(long attachmentId) {
+                    throw new UnsupportedOperationException("검색 경로는 첨부 조달을 쓰지 않는다");
+                }
+
+                @Override
+                public void streamPages(long spaceId, java.util.function.Consumer<com.platform.proto.wiki.v1.PageContent> consumer) {
+                    throw new UnsupportedOperationException("검색 경로는 백필을 쓰지 않는다");
+                }
+
+                @Override
+                public void streamAttachments(long spaceId, java.util.function.Consumer<com.platform.proto.wiki.v1.AttachmentMeta> consumer) {
+                    throw new UnsupportedOperationException("검색 경로는 백필을 쓰지 않는다");
+                }
+
+                @Override
+                public java.util.Set<Long> filterVisiblePages(long userId, java.util.Collection<Long> pageIds) {
+                    java.util.Set<Long> visible = new java.util.HashSet<>(pageIds);
+                    visible.removeAll(visibility.hidden);
+                    return visible;
+                }
+            };
+        }
+    }
+
+    /** 테스트가 페이지 가시성을 조작하는 손잡이. */
+    static class TestWikiVisibility {
+        final java.util.Set<Long> hidden = java.util.concurrent.ConcurrentHashMap.newKeySet();
     }
 
     static class TestPermissionService extends PermissionServiceGrpc.PermissionServiceImplBase {

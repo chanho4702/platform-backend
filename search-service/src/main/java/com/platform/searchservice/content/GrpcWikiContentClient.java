@@ -1,6 +1,7 @@
 package com.platform.searchservice.content;
 
 import com.platform.proto.wiki.v1.AttachmentMeta;
+import com.platform.proto.wiki.v1.FilterVisiblePagesRequest;
 import com.platform.proto.wiki.v1.GetAttachmentMetaRequest;
 import com.platform.proto.wiki.v1.GetPageContentRequest;
 import com.platform.proto.wiki.v1.ListAttachmentsRequest;
@@ -73,6 +74,20 @@ public class GrpcWikiContentClient implements WikiContentClient {
             // 스트림 중간에 끊기면 백필은 불완전하다 — 조용히 끝내면 "다 됐다"로 오인된다
             throw new ServiceUnavailableException(
                     what + " 백필 스트림이 중단됐습니다: " + e.getStatus().getCode(), e);
+        }
+    }
+
+    @Override
+    public java.util.Set<Long> filterVisiblePages(long userId, java.util.Collection<Long> pageIds) {
+        try {
+            return new java.util.HashSet<>(stub.filterVisiblePages(FilterVisiblePagesRequest.newBuilder()
+                    .setUserId(userId)
+                    .addAllPageIds(pageIds)
+                    .build()).getVisiblePageIdsList());
+        } catch (StatusRuntimeException e) {
+            // 어떤 실패든 필터 없이 결과를 열면 제한 페이지가 샌다 — 검색 자체를 닫는다(fail-closed)
+            throw new ServiceUnavailableException(
+                    "위키 권한 필터 실패: user=" + userId + " status=" + e.getStatus().getCode(), e);
         }
     }
 }

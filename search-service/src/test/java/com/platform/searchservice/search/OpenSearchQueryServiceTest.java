@@ -18,7 +18,7 @@ class OpenSearchQueryServiceTest {
     void 접근_가능한_스페이스가_없으면_OpenSearch를_호출하지_않는다() {
         OpenSearchClient client = mock(OpenSearchClient.class);
         PermissionClient permissions = scopedTo(AccessScope.of(Set.of()));
-        OpenSearchQueryService search = new OpenSearchQueryService(client, permissions);
+        OpenSearchQueryService search = new OpenSearchQueryService(client, permissions, allVisible());
 
         SearchResults result = search.search(1L, input(List.of()));
 
@@ -30,12 +30,23 @@ class OpenSearchQueryServiceTest {
     void 요청_spaceIds와_권한의_교집합이_없어도_OpenSearch를_호출하지_않는다() {
         OpenSearchClient client = mock(OpenSearchClient.class);
         PermissionClient permissions = scopedTo(AccessScope.of(Set.of(10L)));
-        OpenSearchQueryService search = new OpenSearchQueryService(client, permissions);
+        OpenSearchQueryService search = new OpenSearchQueryService(client, permissions, allVisible());
 
         SearchResults result = search.search(1L, input(List.of("999")));
 
         assertThat(result).isEqualTo(SearchResults.empty());
         verifyNoInteractions(client);
+    }
+
+    /** 후필터 무개입 스텁 — 이 테스트들은 OpenSearch 도달 여부만 본다. */
+    private static com.platform.searchservice.content.WikiContentClient allVisible() {
+        return org.mockito.Mockito.mock(com.platform.searchservice.content.WikiContentClient.class,
+                inv -> {
+                    if (inv.getMethod().getName().equals("filterVisiblePages")) {
+                        return new java.util.HashSet<>((java.util.Collection<?>) inv.getArgument(1));
+                    }
+                    throw new UnsupportedOperationException(inv.getMethod().getName());
+                });
     }
 
     /** 검색 경로는 전역 관리자 여부를 보지 않는다 — 그 판정은 재색인 관리 REST 몫이다. */

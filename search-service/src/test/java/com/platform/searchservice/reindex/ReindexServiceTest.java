@@ -361,6 +361,11 @@ class ReindexServiceTest {
         volatile Runnable beforePages = () -> {};
 
         @Override
+        public java.util.Set<Long> filterVisiblePages(long userId, java.util.Collection<Long> pageIds) {
+            throw new UnsupportedOperationException("백필 경로는 권한 필터를 쓰지 않는다");
+        }
+
+        @Override
         public Optional<PageContent> getPage(long pageId) {
             throw new UnsupportedOperationException("백필 경로는 단건 조달을 쓰지 않는다");
         }
