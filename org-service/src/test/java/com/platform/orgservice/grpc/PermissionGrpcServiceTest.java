@@ -28,6 +28,8 @@ class PermissionGrpcServiceTest {
 
     @Autowired PermissionGrpcService grpcService;
     @Autowired GrantEntryRepository grants;
+    @Autowired com.platform.orgservice.repository.TeamMemberRepository teamMembers;
+    @Autowired com.platform.orgservice.repository.TeamRepository teamRepo;
 
     Server server;
     ManagedChannel channel;
@@ -36,6 +38,8 @@ class PermissionGrpcServiceTest {
     @BeforeEach
     void setup() throws IOException {
         grants.deleteAll();
+        teamMembers.deleteAll();
+        teamRepo.deleteAll();
         String name = InProcessServerBuilder.generateName();
         server = InProcessServerBuilder.forName(name).directExecutor().addService(grpcService).build().start();
         channel = InProcessChannelBuilder.forName(name).directExecutor().build();
@@ -171,5 +175,20 @@ class PermissionGrpcServiceTest {
                 .setResourceType(ResourceType.RESOURCE_TYPE_UNSPECIFIED).setResourceId("1").build()))
                 .isInstanceOf(io.grpc.StatusRuntimeException.class)
                 .hasMessageContaining("INVALID_ARGUMENT");
+    }
+
+    @Test
+    void ListUserTeams_팀_멤버십을_돌려주고_무소속은_빈_목록() {
+        var team = teamRepo.save(com.platform.orgservice.domain.Team.of("플랫폼팀", null));
+        teamMembers.save(com.platform.orgservice.domain.TeamMember.of(team.getId(), 42L,
+                com.platform.orgservice.domain.TeamRole.MEMBER));
+
+        ListUserTeamsResponse mine = stub.listUserTeams(
+                ListUserTeamsRequest.newBuilder().setUserId(42L).build());
+        assertThat(mine.getTeamIdsList()).containsExactly(team.getId());
+
+        ListUserTeamsResponse none = stub.listUserTeams(
+                ListUserTeamsRequest.newBuilder().setUserId(99L).build());
+        assertThat(none.getTeamIdsList()).isEmpty();
     }
 }

@@ -13,6 +13,8 @@ service PermissionService {
   rpc CreateGrant(CreateGrantRequest) returns (CreateGrantResponse);
   // 내부 전용 — 리소스가 사라졌을 때 그 리소스에 걸린 grant 정리 (없으면 고아 grant가 남는다)
   rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse);
+  // 사용자의 팀 멤버십(W18 페이지 제한의 TEAM 주체 판정용) — 팀 원장은 org가 소유한다
+  rpc ListUserTeams(ListUserTeamsRequest) returns (ListUserTeamsResponse);
 }
 
 enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
@@ -57,3 +59,6 @@ message RevokeGrantRequest {
   int64 user_id = 3;
 }
 message RevokeGrantResponse { int32 revoked = 1; }  // 회수한 grant 수 — 대상이 없으면 0 (멱등)
+
+message ListUserTeamsRequest { int64 user_id = 1; }
+message ListUserTeamsResponse { repeated int64 team_ids = 1; }

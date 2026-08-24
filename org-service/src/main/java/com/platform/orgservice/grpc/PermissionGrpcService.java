@@ -23,6 +23,16 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
 
     private final PermissionFacade permissions;
     private final GrantEntryRepository grants;
+    private final com.platform.orgservice.repository.TeamMemberRepository teamMembers;
+
+    @Override
+    public void listUserTeams(ListUserTeamsRequest req, StreamObserver<ListUserTeamsResponse> out) {
+        // W18 페이지 제한의 TEAM 주체 판정 — wiki가 30초 캐시로 감싼다(권한 판정과 같은 지연 특성)
+        out.onNext(ListUserTeamsResponse.newBuilder()
+                .addAllTeamIds(teamMembers.findTeamIdsByMemberId(req.getUserId()))
+                .build());
+        out.onCompleted();
+    }
 
     @Override
     public void checkPermission(CheckPermissionRequest req, StreamObserver<CheckPermissionResponse> out) {
