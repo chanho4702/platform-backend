@@ -85,6 +85,7 @@ class GraphQlSearchIntegrationTest {
             query Search($input: SearchInput!) {
               search(input: $input) {
                 total
+                totalExact
                 tookMs
                 hits {
                   id
@@ -175,8 +176,29 @@ class GraphQlSearchIntegrationTest {
         performSearch(USER, input("검색어"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.search.total").value(1))
+                .andExpect(jsonPath("$.data.search.totalExact").value(true))
                 .andExpect(jsonPath("$.data.search.hits.length()").value(1))
                 .andExpect(jsonPath("$.data.search.hits[0].id").value("1902"));
+    }
+
+    @Test
+    void 첫_raw페이지가_전부_제한이어도_뒤의_공개문서를_첫_페이지에_채운다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        for (int i = 0; i < 20; i++) {
+            long id = 19_100L + i;
+            indexPage(id, 10L, "필터채움", "제한 본문", "published"); // 제목 hit이라 우선 정렬
+            wikiVisibility.hidden.add(id);
+        }
+        for (int i = 0; i < 5; i++) {
+            indexPage(19_200L + i, 10L, "공개 문서 " + i, "필터채움", "published");
+        }
+        refresh();
+
+        performSearch(USER, input("필터채움"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(5))
+                .andExpect(jsonPath("$.data.search.totalExact").value(true))
+                .andExpect(jsonPath("$.data.search.hits.length()").value(5));
     }
 
     @Test

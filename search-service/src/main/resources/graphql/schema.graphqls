@@ -21,6 +21,7 @@ input SearchInput {
 
 type SearchResults {
   total: Int!
+  totalExact: Boolean!
   tookMs: Int!
   hits: [SearchHit!]!
 }

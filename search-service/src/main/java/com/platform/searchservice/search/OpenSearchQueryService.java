@@ -27,6 +27,8 @@ public class OpenSearchQueryService {
     private static final String DRAFT_STATUS = "draft";
     private static final int HIGHLIGHT_FRAGMENT_SIZE = 160;
     private static final int HIGHLIGHT_FRAGMENT_COUNT = 3;
+    private static final int FILTER_BATCH_SIZE = 100;
+    private static final int MAX_FILTER_SCAN = 10_000;
 
     private final OpenSearchClient client;
     private final PermissionClient permissions;
@@ -45,39 +47,61 @@ public class OpenSearchQueryService {
         }
 
         int size = input.normalizedSize();
-        int from = safeOffset(input.normalizedPage(), size);
+        int visibleOffset = safeOffset(input.normalizedPage(), size);
         Query query = buildQuery(input, needsSpaceFilter ? effectiveSpaces : Set.of());
 
-        SearchResponse<Map> response;
+        // 제한 필터를 통과한 순서 기준으로 페이지를 만들어야 첫 raw 페이지의 제한 문서가
+        // 공개 문서를 다음 페이지로 밀어내지 않는다. 한 건을 더 찾으면 다음 페이지 존재도 안다.
+        int targetVisible = (int) Math.min((long) visibleOffset + size + 1L, Integer.MAX_VALUE);
+        List<SearchHit> visible = new ArrayList<>();
+        int rawFrom = 0;
+        long tookMs = 0L;
+        boolean exhausted = false;
         try {
-            response = client.search(s -> s
-                            // 읽기 별칭만 사용한다. 재색인 때 물리 인덱스가 바뀌어도 검색은 끊기지 않는다.
-                            .index(List.of(IndexNames.SEARCH_TARGETS))
-                            .from(from)
-                            .size(size)
-                            .trackTotalHits(t -> t.enabled(true))
-                            .query(query)
-                            .highlight(h -> h
-                                    .fields("title", f -> f
-                                            .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
-                                            .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))
-                                    .fields("content", f -> f
-                                            .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
-                                            .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))),
-                    Map.class);
+            while (!exhausted && visible.size() < targetVisible && rawFrom < MAX_FILTER_SCAN) {
+                SearchResponse<Map> response = executeSearch(query, rawFrom, FILTER_BATCH_SIZE);
+                tookMs += response.took();
+                List<SearchHit> rawHits = response.hits().hits().stream().map(this::toSearchHit).toList();
+                visible.addAll(filterRestricted(userId, rawHits));
+
+                rawFrom += rawHits.size();
+                long rawTotal = response.hits().total() == null ? rawFrom : response.hits().total().value();
+                exhausted = rawHits.isEmpty() || rawFrom >= rawTotal;
+            }
+        } catch (ServiceUnavailableException e) {
+            throw e;
         } catch (Exception e) {
             log.error("OpenSearch 검색 실패: user={} query={}", userId, input.query(), e);
             throw new ServiceUnavailableException("검색 엔진에 연결할 수 없습니다", e);
         }
 
-        long total = response.hits().total() == null ? 0L : response.hits().total().value();
-        List<SearchHit> hits = response.hits().hits().stream().map(this::toSearchHit).toList();
+        int pageEnd = (int) Math.min(visible.size(), (long) visibleOffset + size);
+        List<SearchHit> pageHits = visibleOffset >= visible.size()
+                ? List.of()
+                : List.copyOf(visible.subList(visibleOffset, pageEnd));
+        boolean totalExact = exhausted;
+        long reportedTotal = totalExact
+                ? visible.size()
+                : Math.max(visible.size(), (long) pageEnd + 1L);
+        return new SearchResults(toGraphQlInt(reportedTotal), totalExact, toGraphQlInt(tookMs), pageHits);
+    }
 
-        // W18 페이지 제한 후필터 — 색인은 제한을 모른다(변경 시 재색인 불가피 회피, 설계 §4).
-        // 질의 시점에 wiki가 판정한다. wiki 불능 시 결과를 여는 대신 검색을 닫는다(fail-closed).
-        List<SearchHit> visibleHits = filterRestricted(userId, hits);
-        total -= (hits.size() - visibleHits.size()); // 이 페이지에서 걸러진 만큼 보정("N건 이상" 표기 허용)
-        return new SearchResults(toGraphQlInt(Math.max(total, 0)), toGraphQlInt(response.took()), visibleHits);
+    private SearchResponse<Map> executeSearch(Query query, int from, int size) throws java.io.IOException {
+        return client.search(s -> s
+                        // 읽기 별칭만 사용한다. 재색인 때 물리 인덱스가 바뀌어도 검색은 끊기지 않는다.
+                        .index(List.of(IndexNames.SEARCH_TARGETS))
+                        .from(from)
+                        .size(size)
+                        .trackTotalHits(t -> t.enabled(true))
+                        .query(query)
+                        .highlight(h -> h
+                                .fields("title", f -> f
+                                        .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
+                                        .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))
+                                .fields("content", f -> f
+                                        .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
+                                        .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))),
+                Map.class);
     }
 
     private static Query buildQuery(SearchInput input, Set<Long> effectiveSpaces) {

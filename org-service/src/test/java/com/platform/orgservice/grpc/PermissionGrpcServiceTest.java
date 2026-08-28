@@ -30,6 +30,7 @@ class PermissionGrpcServiceTest {
     @Autowired GrantEntryRepository grants;
     @Autowired com.platform.orgservice.repository.TeamMemberRepository teamMembers;
     @Autowired com.platform.orgservice.repository.TeamRepository teamRepo;
+    @Autowired com.platform.orgservice.repository.MemberRepository memberRepo;
 
     Server server;
     ManagedChannel channel;
@@ -40,6 +41,7 @@ class PermissionGrpcServiceTest {
         grants.deleteAll();
         teamMembers.deleteAll();
         teamRepo.deleteAll();
+        memberRepo.deleteAll();
         String name = InProcessServerBuilder.generateName();
         server = InProcessServerBuilder.forName(name).directExecutor().addService(grpcService).build().start();
         channel = InProcessChannelBuilder.forName(name).directExecutor().build();
@@ -190,5 +192,29 @@ class PermissionGrpcServiceTest {
         ListUserTeamsResponse none = stub.listUserTeams(
                 ListUserTeamsRequest.newBuilder().setUserId(99L).build());
         assertThat(none.getTeamIdsList()).isEmpty();
+    }
+
+    @Test
+    void ValidatePrincipals_존재하지_않거나_잘못된_주체만_missing으로_돌려준다() {
+        memberRepo.save(com.platform.orgservice.domain.Member.of(42L, "앨리스", "alice@example.com"));
+        var team = teamRepo.save(com.platform.orgservice.domain.Team.of("플랫폼팀", null));
+
+        ValidatePrincipalsResponse response = stub.validatePrincipals(
+                ValidatePrincipalsRequest.newBuilder()
+                        .addPrincipals(PrincipalRef.newBuilder()
+                                .setKind(PrincipalKind.PRINCIPAL_USER).setId(42L))
+                        .addPrincipals(PrincipalRef.newBuilder()
+                                .setKind(PrincipalKind.PRINCIPAL_TEAM).setId(team.getId()))
+                        .addPrincipals(PrincipalRef.newBuilder()
+                                .setKind(PrincipalKind.PRINCIPAL_USER).setId(999L))
+                        .addPrincipals(PrincipalRef.newBuilder()
+                                .setKind(PrincipalKind.PRINCIPAL_KIND_UNSPECIFIED).setId(1L))
+                        .build());
+
+        assertThat(response.getMissingList())
+                .extracting(PrincipalRef::getKind, PrincipalRef::getId)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(PrincipalKind.PRINCIPAL_USER, 999L),
+                        org.assertj.core.groups.Tuple.tuple(PrincipalKind.PRINCIPAL_KIND_UNSPECIFIED, 1L));
     }
 }

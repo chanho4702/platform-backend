@@ -24,6 +24,8 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
     private final PermissionFacade permissions;
     private final GrantEntryRepository grants;
     private final com.platform.orgservice.repository.TeamMemberRepository teamMembers;
+    private final com.platform.orgservice.repository.MemberRepository members;
+    private final com.platform.orgservice.repository.TeamRepository teams;
 
     @Override
     public void listUserTeams(ListUserTeamsRequest req, StreamObserver<ListUserTeamsResponse> out) {
@@ -31,6 +33,22 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
         out.onNext(ListUserTeamsResponse.newBuilder()
                 .addAllTeamIds(teamMembers.findTeamIdsByMemberId(req.getUserId()))
                 .build());
+        out.onCompleted();
+    }
+
+    @Override
+    public void validatePrincipals(ValidatePrincipalsRequest req,
+                                   StreamObserver<ValidatePrincipalsResponse> out) {
+        ValidatePrincipalsResponse.Builder response = ValidatePrincipalsResponse.newBuilder();
+        for (PrincipalRef principal : req.getPrincipalsList()) {
+            boolean exists = principal.getId() > 0 && switch (principal.getKind()) {
+                case PRINCIPAL_USER -> members.existsById(principal.getId());
+                case PRINCIPAL_TEAM -> teams.existsById(principal.getId());
+                default -> false;
+            };
+            if (!exists) response.addMissing(principal);
+        }
+        out.onNext(response.build());
         out.onCompleted();
     }
 

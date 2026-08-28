@@ -15,6 +15,8 @@ service PermissionService {
   rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse);
   // 사용자의 팀 멤버십(W18 페이지 제한의 TEAM 주체 판정용) — 팀 원장은 org가 소유한다
   rpc ListUserTeams(ListUserTeamsRequest) returns (ListUserTeamsResponse);
+  // 페이지 제한 저장 전 주체 실재 검증 — 존재하지 않는 사용자·팀으로 잠기는 구성을 막는다
+  rpc ValidatePrincipals(ValidatePrincipalsRequest) returns (ValidatePrincipalsResponse);
 }
 
 enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
@@ -62,3 +64,16 @@ message RevokeGrantResponse { int32 revoked = 1; }  // 회수한 grant 수 — �
 
 message ListUserTeamsRequest { int64 user_id = 1; }
 message ListUserTeamsResponse { repeated int64 team_ids = 1; }
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_USER = 1;
+  PRINCIPAL_TEAM = 2;
+}
+message PrincipalRef {
+  PrincipalKind kind = 1;
+  int64 id = 2;
+}
+message ValidatePrincipalsRequest { repeated PrincipalRef principals = 1; }
+// 요청 순서와 무관하게, 실재하지 않거나 형식이 잘못된 주체만 반환한다.
+message ValidatePrincipalsResponse { repeated PrincipalRef missing = 1; }
