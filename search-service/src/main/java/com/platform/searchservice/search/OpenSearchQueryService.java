@@ -207,11 +207,18 @@ public class OpenSearchQueryService {
                 text(source, "spaceKey"),
                 text(source, "spaceName"),
                 pageId,
+                pageType(source),
                 nullableText(source, "title"),
                 nullableText(source, "filename"),
                 highlights,
                 instantText(source.get("updatedAt")),
                 score == null ? 0.0 : score);
+    }
+
+    /** 색인의 `type`(page·folder)을 계약의 PageType으로 옮긴다. 첨부에는 없는 필드라 null이다. */
+    private static String pageType(java.util.Map<String, Object> source) {
+        String type = nullableText(source, "type");
+        return type == null ? null : type.toUpperCase(java.util.Locale.ROOT);
     }
 
     private static int safeOffset(int page, int size) {

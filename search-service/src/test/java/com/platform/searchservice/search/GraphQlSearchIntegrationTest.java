@@ -81,6 +81,13 @@ class GraphQlSearchIntegrationTest {
     private static final long USER = 42L;
     private static final AtomicLong VERSION = new AtomicLong(100_000L);
 
+    /**
+     * wiki-front의 WikiSearch 질의와 **같은 필드 목록**이어야 한다.
+     *
+     * 여기서만 필드를 줄여 쓰면 계약 구멍이 테스트를 통과한다 — pageType이 계약에 없는데도
+     * 이 테스트가 오래 그린이었던 이유가 그것이다. 클라이언트는 없는 필드를 물어보는 순간
+     * 질의 전체가 검증 오류로 떨어져 검색 화면이 통째로 에러 배너가 된다.
+     */
     private static final String SEARCH_OPERATION = """
             query Search($input: SearchInput!) {
               search(input: $input) {
@@ -94,6 +101,7 @@ class GraphQlSearchIntegrationTest {
                   spaceKey
                   spaceName
                   pageId
+                  pageType
                   title
                   filename
                   highlights
@@ -488,6 +496,23 @@ class GraphQlSearchIntegrationTest {
         performSearch(USER, range)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.search.total").value(2));
+    }
+
+    /**
+     * 프론트가 결과 목록에서 폴더와 문서를 다른 아이콘으로 그린다 — 계약에 없으면 질의 전체가
+     * 검증 오류로 떨어져 검색 화면이 통째로 에러 배너가 된다(실제로 그랬다).
+     */
+    @Test
+    void 페이지_종류를_내려준다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        indexes.upsertPage(new PageDoc(
+                PageDoc.DOC_TYPE, 2401L, 10L, "space-10", "스페이스 10",
+                "폴더 문서", "본문", "folder", "published", 1, USER, 1_000L, List.of()), nextVersion());
+        refresh();
+
+        performSearch(USER, input("본문"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.hits[0].pageType").value("FOLDER"));
     }
 
     /**

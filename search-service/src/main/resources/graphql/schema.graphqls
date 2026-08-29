@@ -42,6 +42,8 @@ type SearchHit {
   spaceName: String!
   "ATTACHMENT면 소속 페이지"
   pageId: ID
+  "PAGE — 폴더와 문서를 결과 목록에서 다른 아이콘으로 그린다"
+  pageType: PageType
   "PAGE"
   title: String
   "ATTACHMENT"
@@ -55,4 +57,9 @@ type SearchHit {
 enum DocType {
   PAGE
   ATTACHMENT
+}
+
+enum PageType {
+  PAGE
+  FOLDER
 }
