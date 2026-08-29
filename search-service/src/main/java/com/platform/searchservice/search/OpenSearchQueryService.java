@@ -114,6 +114,15 @@ public class OpenSearchQueryService {
                     .map(type -> FieldValue.of(type.name()))
                     .toList()));
         }
+        Set<Long> authors = input.requestedAuthorIds();
+        if (!authors.isEmpty()) {
+            filters.add(terms("authorId", authors.stream().map(id -> FieldValue.of(id.longValue())).toList()));
+        }
+        Long after = input.updatedAfterMillis();
+        Long before = input.updatedBeforeMillis();
+        if (after != null || before != null) {
+            filters.add(updatedRange(after, before));
+        }
 
         Query textMatch = Query.of(q -> q.multiMatch(m -> m
                 // 제목을 본문보다 명시적으로 높인다. filename은 첨부 인덱스에서만 존재한다.
@@ -128,6 +137,19 @@ public class OpenSearchQueryService {
                 b.mustNot(n -> n.term(t -> t.field("status").value(FieldValue.of(DRAFT_STATUS))));
             }
             return b;
+        }));
+    }
+
+    /**
+     * updatedAt 범위. 매핑이 `date` + `epoch_millis`라 경계도 밀리초 숫자로 보낸다.
+     * 경계는 포함(gte/lte)이다 — "8월 1일부터"가 8월 1일 문서를 빼면 사용자가 이유를 알 수 없다.
+     */
+    private static Query updatedRange(Long after, Long before) {
+        return Query.of(q -> q.range(r -> {
+            r.field("updatedAt");
+            if (after != null) r.gte(org.opensearch.client.json.JsonData.of(after));
+            if (before != null) r.lte(org.opensearch.client.json.JsonData.of(before));
+            return r;
         }));
     }
 

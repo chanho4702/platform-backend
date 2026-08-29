@@ -14,6 +14,12 @@ input SearchInput {
   docTypes: [DocType!]
   "기본은 게시된 문서만. 초안은 색인에는 있고 질의에서 걸러진다"
   includeDrafts: Boolean = false
+  "마지막 수정자 — 첨부에는 없는 필드라 페이지만 걸린다"
+  authorIds: [ID!]
+  "이 시각 이후 수정된 문서만(ISO-8601 시각 또는 날짜)"
+  updatedAfter: String
+  "이 시각 이전 수정된 문서만"
+  updatedBefore: String
   page: Int = 0
   "상한 100 — 넘기면 100으로 잘린다"
   size: Int = 20

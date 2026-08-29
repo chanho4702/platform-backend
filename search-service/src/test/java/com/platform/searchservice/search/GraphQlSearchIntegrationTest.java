@@ -414,9 +414,14 @@ class GraphQlSearchIntegrationTest {
     }
 
     private void indexPage(long pageId, long spaceId, String title, String content, String status) {
+        indexPage(pageId, spaceId, title, content, status, USER, 1_000L);
+    }
+
+    private void indexPage(long pageId, long spaceId, String title, String content, String status,
+                           long authorId, long updatedAt) {
         indexes.upsertPage(new PageDoc(
                 PageDoc.DOC_TYPE, pageId, spaceId, "space-" + spaceId, "스페이스 " + spaceId,
-                title, content, "page", status, 1, USER, 1_000L), nextVersion());
+                title, content, "page", status, 1, authorId, updatedAt), nextVersion());
     }
 
     private static long nextVersion() {
@@ -431,6 +436,63 @@ class GraphQlSearchIntegrationTest {
         Map<String, Object> input = new HashMap<>();
         input.put("query", query);
         return input;
+    }
+
+    /**
+     * 작성자·기간 필터(W22). 색인에 이미 authorId·updatedAt이 있어 질의만 붙이면 됐다 —
+     * 라벨 필터만 색인 필드가 필요해 뒤로 미뤘다.
+     */
+    @Test
+    void 작성자로_거른다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        indexPage(2001L, 10L, "7번 문서", "본문", "published", 7L, 1_000L);
+        indexPage(2002L, 10L, "8번 문서", "본문", "published", 8L, 1_000L);
+        refresh();
+
+        Map<String, Object> filtered = input("본문");
+        filtered.put("authorIds", List.of("7"));
+
+        performSearch(USER, filtered)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(1))
+                .andExpect(jsonPath("$.data.search.hits[0].id").value("2001"));
+    }
+
+    /** 경계는 포함이다 — "8월 1일부터"가 8월 1일 문서를 빼면 사용자가 이유를 알 수 없다. */
+    @Test
+    void 수정_기간으로_거르고_경계를_포함한다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        long day1 = java.time.Instant.parse("2026-08-01T00:00:00Z").toEpochMilli();
+        long day5 = java.time.Instant.parse("2026-08-05T00:00:00Z").toEpochMilli();
+        long day9 = java.time.Instant.parse("2026-08-09T00:00:00Z").toEpochMilli();
+        // 검색어는 nori가 실제로 매칭하는 낱말로 고른다 — "보고서"는 분해 결과가 달라 잡히지 않는다(실측).
+        indexPage(2101L, 10L, "1일 문서", "본문", "published", USER, day1);
+        indexPage(2102L, 10L, "5일 문서", "본문", "published", USER, day5);
+        indexPage(2103L, 10L, "9일 문서", "본문", "published", USER, day9);
+        refresh();
+
+        // 필터 없이 셋 다 잡히는지 먼저 고정한다 — 0건이 나올 때 원인이 범위인지 검색어인지 갈린다.
+        performSearch(USER, input("본문"))
+                .andExpect(jsonPath("$.data.search.total").value(3));
+
+        Map<String, Object> range = input("본문");
+        range.put("updatedAfter", "2026-08-01");
+        range.put("updatedBefore", "2026-08-05T00:00:00Z");
+
+        performSearch(USER, range)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(2));
+    }
+
+    @Test
+    void 잘못된_기간_형식은_거부한다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        Map<String, Object> bad = input("본문");
+        bad.put("updatedAfter", "어제");
+
+        performSearch(USER, bad)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").isArray());
     }
 
     private static RequestPostProcessor asUser(long userId) {
