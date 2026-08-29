@@ -48,6 +48,7 @@
       "status": { "type": "keyword" },
       "version": { "type": "integer" },
       "authorId": { "type": "long" },
+      "labels": { "type": "keyword" },
       "updatedAt": { "type": "date", "format": "epoch_millis" }
     }
   }

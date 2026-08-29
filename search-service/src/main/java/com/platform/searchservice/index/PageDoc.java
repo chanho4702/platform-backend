@@ -20,7 +20,9 @@ public record PageDoc(
         String status,
         int version,
         long authorId,
-        long updatedAt
+        long updatedAt,
+        /** 정규화된 라벨 이름. 검색의 라벨 필터가 쓴다 — 순서는 의미 없다. */
+        java.util.List<String> labels
 ) {
     public static final String DOC_TYPE = "PAGE";
 }

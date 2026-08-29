@@ -28,7 +28,8 @@ public final class WikiDocuments {
                 page.getStatus().name().toLowerCase(Locale.ROOT),
                 page.getVersion(),
                 page.getAuthorId(),
-                page.getUpdatedAt());
+                page.getUpdatedAt(),
+                page.getLabelsList());
     }
 
     public static AttachmentDoc toDocument(AttachmentMeta attachment) {

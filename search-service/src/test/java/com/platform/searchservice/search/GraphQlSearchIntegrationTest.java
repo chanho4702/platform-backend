@@ -421,7 +421,13 @@ class GraphQlSearchIntegrationTest {
                            long authorId, long updatedAt) {
         indexes.upsertPage(new PageDoc(
                 PageDoc.DOC_TYPE, pageId, spaceId, "space-" + spaceId, "스페이스 " + spaceId,
-                title, content, "page", status, 1, authorId, updatedAt), nextVersion());
+                title, content, "page", status, 1, authorId, updatedAt, List.of()), nextVersion());
+    }
+
+    private void indexPageWithLabels(long pageId, long spaceId, String title, List<String> labels) {
+        indexes.upsertPage(new PageDoc(
+                PageDoc.DOC_TYPE, pageId, spaceId, "space-" + spaceId, "스페이스 " + spaceId,
+                title, "본문", "page", "published", 1, USER, 1_000L, labels), nextVersion());
     }
 
     private static long nextVersion() {
@@ -482,6 +488,46 @@ class GraphQlSearchIntegrationTest {
         performSearch(USER, range)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.search.total").value(2));
+    }
+
+    /**
+     * 라벨 필터(W22). 라벨은 wiki-backend가 gRPC 페이로드에 실어 보내고 색인 문서에 keyword로 들어간다 —
+     * 라벨이 바뀌면 그 페이지가 재색인된다(LabelService).
+     */
+    @Test
+    void 라벨로_거르고_여럿이면_하나라도_붙은_문서를_찾는다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        indexPageWithLabels(2201L, 10L, "설계 문서", List.of("설계", "wave-d"));
+        indexPageWithLabels(2202L, 10L, "회의 문서", List.of("회의"));
+        indexPageWithLabels(2203L, 10L, "빈 문서", List.of());
+        refresh();
+
+        Map<String, Object> one = input("본문");
+        one.put("labels", List.of("설계"));
+        performSearch(USER, one)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(1))
+                .andExpect(jsonPath("$.data.search.hits[0].id").value("2201"));
+
+        Map<String, Object> two = input("본문");
+        two.put("labels", List.of("설계", "회의"));
+        performSearch(USER, two)
+                .andExpect(jsonPath("$.data.search.total").value(2));
+    }
+
+    /** 저장 시 소문자·하이픈으로 정규화되므로 질의도 같은 규칙을 타야 한다. */
+    @Test
+    void 라벨_대소문자와_공백을_정규화해서_맞춘다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        indexPageWithLabels(2301L, 10L, "정규화 문서", List.of("wave-d"));
+        refresh();
+
+        Map<String, Object> mixed = input("본문");
+        mixed.put("labels", List.of("Wave D"));
+
+        performSearch(USER, mixed)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(1));
     }
 
     @Test

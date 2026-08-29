@@ -527,7 +527,8 @@ class RedisStreamEventConsumerTest {
                 "published",
                 page.getVersion(),
                 page.getAuthorId(),
-                page.getUpdatedAt());
+                page.getUpdatedAt(),
+                page.getLabelsList());
     }
 
     private static AttachmentMeta attachmentMeta(

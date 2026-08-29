@@ -209,7 +209,7 @@ class OpenSearchIndexServiceTest {
 
     private static PageDoc page(long pageId, long spaceId, String title, String content) {
         return new PageDoc(PageDoc.DOC_TYPE, pageId, spaceId, "old-key", "기존 스페이스",
-                title, content, "page", "published", 1, 9L, 1_000L);
+                title, content, "page", "published", 1, 9L, 1_000L, java.util.List.of());
     }
 
     private static AttachmentDoc attachment(long attachmentId, long pageId, long spaceId, String filename) {

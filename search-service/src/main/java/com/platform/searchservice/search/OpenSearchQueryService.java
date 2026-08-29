@@ -118,6 +118,10 @@ public class OpenSearchQueryService {
         if (!authors.isEmpty()) {
             filters.add(terms("authorId", authors.stream().map(id -> FieldValue.of(id.longValue())).toList()));
         }
+        List<String> labels = input.normalizedLabels();
+        if (!labels.isEmpty()) {
+            filters.add(terms("labels", labels.stream().map(FieldValue::of).toList()));
+        }
         Long after = input.updatedAfterMillis();
         Long before = input.updatedBeforeMillis();
         if (after != null || before != null) {

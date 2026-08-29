@@ -57,6 +57,9 @@ message PageContent {
   int32 version = 10;
   int64 author_id = 11;     // 최종 수정자
   int64 updated_at = 12;    // epoch millis
+  // 라벨(0.10.0) — 검색의 라벨 필터용. 정규화된 소문자 이름이며 순서는 의미 없다.
+  // 색인이 페이지마다 라벨을 되묻지 않도록 본문과 함께 싣는다(space_key·space_name과 같은 이유).
+  repeated string labels = 13;
 }
 
 message AttachmentMeta {

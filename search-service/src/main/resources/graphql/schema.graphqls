@@ -20,6 +20,8 @@ input SearchInput {
   updatedAfter: String
   "이 시각 이전 수정된 문서만"
   updatedBefore: String
+  "라벨(정규화된 소문자). 여럿이면 하나라도 붙은 문서를 찾는다"
+  labels: [String!]
   page: Int = 0
   "상한 100 — 넘기면 100으로 잘린다"
   size: Int = 20

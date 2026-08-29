@@ -16,6 +16,8 @@ public record SearchInput(
         String updatedAfter,
         /** 이 시각 이전 수정된 문서만(ISO-8601). */
         String updatedBefore,
+        /** 라벨 — 여럿이면 OR(하나라도 붙은 문서). 첨부에는 없는 필드라 페이지만 걸린다. */
+        List<String> labels,
         Integer page,
         Integer size
 ) {
@@ -71,6 +73,17 @@ public record SearchInput(
                 throw new IllegalArgumentException(field + "는 ISO-8601 시각이어야 합니다: " + raw, e);
             }
         }
+    }
+
+    /** 저장할 때와 같은 규칙으로 정규화한다 — 대소문자만 달라 안 걸리면 사용자는 이유를 모른다. */
+    public List<String> normalizedLabels() {
+        if (labels == null || labels.isEmpty()) return List.of();
+        return labels.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(raw -> raw.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\s+", "-"))
+                .filter(value -> !value.isEmpty())
+                .distinct()
+                .toList();
     }
 
     public boolean draftsIncluded() {
