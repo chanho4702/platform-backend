@@ -18,6 +18,8 @@ public record SearchInput(
         String updatedBefore,
         /** 라벨 — 여럿이면 OR(하나라도 붙은 문서). 첨부에는 없는 필드라 페이지만 걸린다. */
         List<String> labels,
+        /** 정렬. null이면 관련도. */
+        SearchSort sort,
         Integer page,
         Integer size
 ) {
@@ -84,6 +86,10 @@ public record SearchInput(
                 .filter(value -> !value.isEmpty())
                 .distinct()
                 .toList();
+    }
+
+    public SearchSort normalizedSort() {
+        return sort == null ? SearchSort.RELEVANCE : sort;
     }
 
     public boolean draftsIncluded() {

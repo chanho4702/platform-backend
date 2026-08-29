@@ -71,7 +71,7 @@ class OpenSearchQueryServiceTest {
         OpenSearchQueryService search = new OpenSearchQueryService(
                 client, scopedTo(AccessScope.of(Set.of(10L))), wiki);
 
-        SearchResults result = search.search(1L, new SearchInput("검색", List.of(), List.of(), false, null, null, null, null, 0, 1));
+        SearchResults result = search.search(1L, new SearchInput("검색", List.of(), List.of(), false, null, null, null, null, null, 0, 1));
 
         assertThat(result.total()).isEqualTo(1);
         assertThat(result.totalExact()).isTrue();
@@ -135,6 +135,6 @@ class OpenSearchQueryServiceTest {
     }
 
     private static SearchInput input(List<String> spaceIds) {
-        return new SearchInput("검색", spaceIds, List.of(), false, null, null, null, null, 0, 20);
+        return new SearchInput("검색", spaceIds, List.of(), false, null, null, null, null, null, 0, 20);
     }
 }

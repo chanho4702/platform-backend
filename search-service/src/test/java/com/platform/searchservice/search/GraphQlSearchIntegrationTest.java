@@ -555,6 +555,31 @@ class GraphQlSearchIntegrationTest {
                 .andExpect(jsonPath("$.data.search.total").value(1));
     }
 
+    /**
+     * 정렬은 두 엔진(OpenSearch·라이트)이 같은 값으로 같은 순서를 내야 한다 — 배포에 따라
+     * "최신순"이 다르게 나오면 사용자는 어느 쪽이 맞는지 알 수 없다.
+     */
+    @Test
+    void 수정일_순으로_정렬한다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        long day1 = java.time.Instant.parse("2026-08-01T00:00:00Z").toEpochMilli();
+        long day9 = java.time.Instant.parse("2026-08-09T00:00:00Z").toEpochMilli();
+        indexPage(2501L, 10L, "오래된 문서", "본문", "published", USER, day1);
+        indexPage(2502L, 10L, "최근 문서", "본문", "published", USER, day9);
+        refresh();
+
+        Map<String, Object> desc = input("본문");
+        desc.put("sort", "UPDATED_DESC");
+        performSearch(USER, desc)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.hits[0].id").value("2502"));
+
+        Map<String, Object> asc = input("본문");
+        asc.put("sort", "UPDATED_ASC");
+        performSearch(USER, asc)
+                .andExpect(jsonPath("$.data.search.hits[0].id").value("2501"));
+    }
+
     @Test
     void 잘못된_기간_형식은_거부한다() throws Exception {
         permissions.allowSpaces(USER, 10L);

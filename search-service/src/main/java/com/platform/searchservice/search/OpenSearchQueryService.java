@@ -3,6 +3,7 @@ package com.platform.searchservice.search;
 import com.platform.searchservice.common.ServiceUnavailableException;
 import com.platform.searchservice.index.IndexNames;
 import com.platform.searchservice.permission.AccessScope;
+import org.opensearch.client.opensearch._types.SortOrder;
 import com.platform.searchservice.permission.PermissionClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -59,7 +60,8 @@ public class OpenSearchQueryService {
         boolean exhausted = false;
         try {
             while (!exhausted && visible.size() < targetVisible && rawFrom < MAX_FILTER_SCAN) {
-                SearchResponse<Map> response = executeSearch(query, rawFrom, FILTER_BATCH_SIZE);
+                SearchResponse<Map> response =
+                        executeSearch(query, input.normalizedSort(), rawFrom, FILTER_BATCH_SIZE);
                 tookMs += response.took();
                 List<SearchHit> rawHits = response.hits().hits().stream().map(this::toSearchHit).toList();
                 visible.addAll(filterRestricted(userId, rawHits));
@@ -86,8 +88,10 @@ public class OpenSearchQueryService {
         return new SearchResults(toGraphQlInt(reportedTotal), totalExact, toGraphQlInt(tookMs), pageHits);
     }
 
-    private SearchResponse<Map> executeSearch(Query query, int from, int size) throws java.io.IOException {
-        return client.search(s -> s
+    private SearchResponse<Map> executeSearch(Query query, SearchSort sort, int from, int size)
+            throws java.io.IOException {
+        return client.search(s -> {
+                    s
                         // 읽기 별칭만 사용한다. 재색인 때 물리 인덱스가 바뀌어도 검색은 끊기지 않는다.
                         .index(List.of(IndexNames.SEARCH_TARGETS))
                         .from(from)
@@ -100,7 +104,16 @@ public class OpenSearchQueryService {
                                         .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))
                                 .fields("content", f -> f
                                         .fragmentSize(HIGHLIGHT_FRAGMENT_SIZE)
-                                        .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT))),
+                                        .numberOfFragments(HIGHLIGHT_FRAGMENT_COUNT)));
+                    // 관련도는 OpenSearch 기본 정렬(_score)이라 절을 붙이지 않는다 — 붙이면
+                    // 동점 처리까지 우리가 떠안는다. 날짜 정렬만 명시한다.
+                    if (sort == SearchSort.UPDATED_DESC) {
+                        s.sort(so -> so.field(f -> f.field("updatedAt").order(SortOrder.Desc)));
+                    } else if (sort == SearchSort.UPDATED_ASC) {
+                        s.sort(so -> so.field(f -> f.field("updatedAt").order(SortOrder.Asc)));
+                    }
+                    return s;
+                },
                 Map.class);
     }
 
