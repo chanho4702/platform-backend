@@ -49,6 +49,23 @@ public class PermissionFacade {
         }
     }
 
+    /**
+     * 그 리소스의 권한을 관리할 수 있는가 — 전역 관리자이거나 **그 리소스의 ADMIN**이면 된다.
+     *
+     * 왜 넓히는가: 스페이스 권한을 전역 관리자만 만질 수 있으면 스페이스 소유자가 자기 공간에
+     * 사람을 초대할 수 없다. 컨플루언스도 스페이스 관리자가 그 스페이스 권한을 관리한다.
+     * GLOBAL 권한은 여전히 전역 관리자만 — 자기 스페이스 ADMIN이 전역 권한을 만들 수는 없다.
+     */
+    public void requireResourceAdmin(long userId, ResourceKind kind, String resourceId) {
+        if (kind == ResourceKind.GLOBAL) {
+            requireGlobalAdmin(userId);
+            return;
+        }
+        if (check(userId, ResourceKind.GLOBAL, "", PermAction.ADMIN).allowed()) return;
+        if (check(userId, kind, nullToEmpty(resourceId), PermAction.ADMIN).allowed()) return;
+        throw new AccessDeniedException("이 리소스의 권한을 관리할 수 없습니다");
+    }
+
     private List<Long> teamIdsOf(long userId) {
         List<Long> ids = teamMembers.findTeamIdsByMemberId(userId);
         return ids.isEmpty() ? List.of(-1L) : ids; // 빈 IN 절 회피

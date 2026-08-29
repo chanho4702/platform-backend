@@ -1,6 +1,9 @@
 package com.platform.orgservice.grant;
 
 import com.platform.orgservice.domain.GrantEntry;
+import com.platform.orgservice.domain.GrantRole;
+import com.platform.orgservice.domain.ResourceKind;
+import com.platform.orgservice.domain.SubjectType;
 import com.platform.orgservice.repository.GrantEntryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,12 +30,70 @@ class GrantControllerTest {
 
     static final long ADMIN_ID = 100L;
     static final long USER_ID = 200L;
+    /** 특정 스페이스의 ADMIN — 전역 권한은 없다. */
+    static final long SPACE_ADMIN_ID = 300L;
 
     @BeforeEach
     void setup() {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         grants.deleteAll();
         grants.save(GrantEntry.globalAdmin(ADMIN_ID));
+    }
+
+    /**
+     * 스페이스 소유자가 자기 공간 권한을 못 만지면 사람을 초대할 방법이 없다.
+     * 컨플루언스도 스페이스 관리자가 그 스페이스 권한을 관리한다(2026-08-29).
+     */
+    @Test
+    void 스페이스_ADMIN은_자기_스페이스_권한을_관리한다() throws Exception {
+        grants.save(GrantEntry.of(SubjectType.USER, SPACE_ADMIN_ID, ResourceKind.SPACE, "sp-1", GrantRole.ADMIN));
+        String body = "{\"subjectType\":\"USER\",\"subjectId\":200,\"resourceType\":\"SPACE\","
+                + "\"resourceId\":\"sp-1\",\"role\":\"EDITOR\"}";
+
+        String created = mvc.perform(post("/api/org/grants").with(asUser(SPACE_ADMIN_ID, "SpaceAdmin"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long grantId = com.jayway.jsonpath.JsonPath.parse(created).read("$.id", Long.class);
+
+        mvc.perform(get("/api/org/grants?resourceType=SPACE&resourceId=sp-1")
+                        .with(asUser(SPACE_ADMIN_ID, "SpaceAdmin")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+
+        mvc.perform(delete("/api/org/grants/" + grantId).with(asUser(SPACE_ADMIN_ID, "SpaceAdmin")))
+                .andExpect(status().isNoContent());
+    }
+
+    /** 자기 스페이스의 관리자라고 남의 스페이스나 전역 권한까지 만질 수는 없다. */
+    @Test
+    void 스페이스_ADMIN은_다른_리소스_권한은_만지지_못한다() throws Exception {
+        grants.save(GrantEntry.of(SubjectType.USER, SPACE_ADMIN_ID, ResourceKind.SPACE, "sp-1", GrantRole.ADMIN));
+
+        mvc.perform(post("/api/org/grants").with(asUser(SPACE_ADMIN_ID, "SpaceAdmin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectType\":\"USER\",\"subjectId\":200,\"resourceType\":\"SPACE\","
+                                + "\"resourceId\":\"sp-2\",\"role\":\"EDITOR\"}"))
+                .andExpect(status().isForbidden());
+
+        mvc.perform(post("/api/org/grants").with(asUser(SPACE_ADMIN_ID, "SpaceAdmin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectType\":\"USER\",\"subjectId\":200,\"resourceType\":\"GLOBAL\","
+                                + "\"resourceId\":null,\"role\":\"ADMIN\"}"))
+                .andExpect(status().isForbidden());
+
+        mvc.perform(get("/api/org/grants?resourceType=SPACE&resourceId=sp-2")
+                        .with(asUser(SPACE_ADMIN_ID, "SpaceAdmin")))
+                .andExpect(status().isForbidden());
+    }
+
+    /** EDITOR는 관리 권한이 아니다 — 자기가 속한 스페이스라도 권한을 못 만진다. */
+    @Test
+    void 스페이스_EDITOR는_권한을_관리하지_못한다() throws Exception {
+        grants.save(GrantEntry.of(SubjectType.USER, USER_ID, ResourceKind.SPACE, "sp-1", GrantRole.EDITOR));
+
+        mvc.perform(get("/api/org/grants?resourceType=SPACE&resourceId=sp-1").with(asUser(USER_ID, "Bob")))
+                .andExpect(status().isForbidden());
     }
 
     @Test

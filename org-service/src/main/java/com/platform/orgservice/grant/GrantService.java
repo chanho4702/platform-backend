@@ -24,14 +24,16 @@ public class GrantService {
 
     @Transactional(readOnly = true)
     public List<GrantDetailResponse> listByResource(long actorId, ResourceKind resourceType, String resourceId) {
-        permissions.requireGlobalAdmin(actorId);
+        // 전역 관리자 또는 그 리소스의 ADMIN — 스페이스 소유자가 자기 공간 권한을 못 보면
+        // 초대·회수를 아예 할 수 없다(컨플루언스 스페이스 관리자와 같은 범위).
+        permissions.requireResourceAdmin(actorId, resourceType, resourceId);
         return grants.findByResourceTypeAndResourceId(resourceType, resourceId == null ? "" : resourceId)
                 .stream().map(GrantDetailResponse::from).toList();
     }
 
     public GrantDetailResponse create(long actorId, GrantCreateRequest req) {
-        permissions.requireGlobalAdmin(actorId);
         String resourceId = req.resourceType() == ResourceKind.GLOBAL ? "" : req.resourceId();
+        permissions.requireResourceAdmin(actorId, req.resourceType(), resourceId);
         try {
             GrantEntry saved = grants.saveAndFlush(GrantEntry.of(
                     req.subjectType(), req.subjectId(), req.resourceType(), resourceId, req.role()));
@@ -42,8 +44,10 @@ public class GrantService {
     }
 
     public void delete(long actorId, long grantId) {
-        permissions.requireGlobalAdmin(actorId);
-        if (!grants.existsById(grantId)) throw new NotFoundException("grant 없음: " + grantId);
+        // 무엇을 지우는지 먼저 읽어야 "그 리소스의 관리자인가"를 물을 수 있다.
+        GrantEntry target = grants.findById(grantId)
+                .orElseThrow(() -> new NotFoundException("grant 없음: " + grantId));
+        permissions.requireResourceAdmin(actorId, target.getResourceType(), target.getResourceId());
         grants.deleteById(grantId);
     }
 }
