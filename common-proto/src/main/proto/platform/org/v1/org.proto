@@ -20,9 +20,11 @@ service PermissionService {
 }
 
 enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
-enum Action { ACTION_UNSPECIFIED = 0; VIEW = 1; EDIT = 2; ADMIN = 3; }
+// COMMENT(W23): 보기와 편집 사이. 컨플루언스의 "댓글 추가" 권한 — 보는 사람 모두가 댓글을 달 수
+// 있으면 안 되는 스페이스(공지·규정)가 있다. 번호는 추가 순서라 계층 순서가 아니다.
+enum Action { ACTION_UNSPECIFIED = 0; VIEW = 1; EDIT = 2; ADMIN = 3; COMMENT = 4; }
 // ROLE_ADMIN: 같은 proto 패키지의 Action.ADMIN과 C++ 스코프 충돌 회피(proto3 enum 값은 패키지 스코프)
-enum Role { ROLE_UNSPECIFIED = 0; VIEWER = 1; EDITOR = 2; ROLE_ADMIN = 3; }
+enum Role { ROLE_UNSPECIFIED = 0; VIEWER = 1; EDITOR = 2; ROLE_ADMIN = 3; COMMENTER = 4; }
 
 message CheckPermissionRequest {
   int64 user_id = 1;           // JWT sub

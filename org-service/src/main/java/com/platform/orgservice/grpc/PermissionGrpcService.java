@@ -140,6 +140,7 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
     private static PermAction toAction(Action a) {
         return switch (a) {
             case VIEW -> PermAction.VIEW;
+            case COMMENT -> PermAction.COMMENT;
             case EDIT -> PermAction.EDIT;
             case ADMIN -> PermAction.ADMIN;
             default -> null;
@@ -150,6 +151,7 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
     private static GrantRole toDomainRole(Role r) {
         return switch (r) {
             case VIEWER -> GrantRole.VIEWER;
+            case COMMENTER -> GrantRole.COMMENTER;
             case EDITOR -> GrantRole.EDITOR;
             case ROLE_ADMIN -> GrantRole.ADMIN;
             default -> null;
@@ -169,6 +171,7 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
         if (r == null) return Role.ROLE_UNSPECIFIED;
         return switch (r) {
             case VIEWER -> Role.VIEWER;
+            case COMMENTER -> Role.COMMENTER;
             case EDITOR -> Role.EDITOR;
             case ADMIN -> Role.ROLE_ADMIN;
         };
