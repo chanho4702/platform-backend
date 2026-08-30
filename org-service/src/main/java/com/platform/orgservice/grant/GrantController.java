@@ -1,6 +1,7 @@
 package com.platform.orgservice.grant;
 
 import com.platform.orgservice.domain.ResourceKind;
+import com.platform.orgservice.grant.dto.GrantAuditResponse;
 import com.platform.orgservice.grant.dto.GrantCreateRequest;
 import com.platform.orgservice.grant.dto.GrantDetailResponse;
 import jakarta.validation.Valid;
@@ -24,6 +25,18 @@ public class GrantController {
                                                     @RequestParam ResourceKind resourceType,
                                                     @RequestParam(required = false) String resourceId) {
         return grants.listByResource(userId(jwt), resourceType, resourceId);
+    }
+
+    /**
+     * 권한 변경 이력. 조회 범위는 grant 목록과 같다(그 리소스의 ADMIN).
+     *
+     * 응답 모양을 wiki-backend의 감사 항목과 맞춰 뒀다 — 화면이 두 기록을 한 목록으로 합친다.
+     */
+    @GetMapping("/audit")
+    public List<GrantAuditResponse> auditByResource(@AuthenticationPrincipal Jwt jwt,
+                                                    @RequestParam ResourceKind resourceType,
+                                                    @RequestParam(required = false) String resourceId) {
+        return grants.auditByResource(userId(jwt), resourceType, resourceId);
     }
 
     @PostMapping

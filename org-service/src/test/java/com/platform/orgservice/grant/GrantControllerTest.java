@@ -26,6 +26,7 @@ class GrantControllerTest {
 
     @Autowired WebApplicationContext context;
     @Autowired GrantEntryRepository grants;
+    @Autowired com.platform.orgservice.repository.GrantAuditRepository audits;
     MockMvc mvc;
 
     static final long ADMIN_ID = 100L;
@@ -36,6 +37,7 @@ class GrantControllerTest {
     @BeforeEach
     void setup() {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+        audits.deleteAll();
         grants.deleteAll();
         grants.save(GrantEntry.globalAdmin(ADMIN_ID));
     }
@@ -148,5 +150,43 @@ class GrantControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.resourceId").value(""));
+    }
+
+    /**
+     * 권한 변경 감사(W23).
+     *
+     * 감사에서 가장 궁금한 것이 "누가 이 사람에게 권한을 줬나"인데, 그 조작은 여기서 일어나고
+     * wiki-backend는 보지 못한다 — 그래서 이 기록이 없으면 감사 로그에 그 절반이 통째로 빈다.
+     */
+    @Test
+    void 권한_부여와_회수가_감사에_남는다() throws Exception {
+        String body = "{\"subjectType\":\"USER\",\"subjectId\":200,\"resourceType\":\"SPACE\","
+                + "\"resourceId\":\"sp-9\",\"role\":\"EDITOR\"}";
+        String created = mvc.perform(post("/api/org/grants").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long grantId = com.jayway.jsonpath.JsonPath.parse(created).read("$.id", Long.class);
+
+        mvc.perform(delete("/api/org/grants/" + grantId).with(asUser(ADMIN_ID, "Admin")))
+                .andExpect(status().isNoContent());
+
+        // 최신이 먼저 — 회수가 위, 부여가 아래
+        mvc.perform(get("/api/org/grants/audit?resourceType=SPACE&resourceId=sp-9")
+                        .with(asUser(ADMIN_ID, "Admin")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].action").value("GRANT_REVOKED"))
+                .andExpect(jsonPath("$[1].action").value("GRANT_GRANTED"))
+                .andExpect(jsonPath("$[1].detail").value("EDITOR"))
+                .andExpect(jsonPath("$[1].actorId").value(String.valueOf(ADMIN_ID)));
+    }
+
+    /** 조회 범위는 grant 목록과 같다 — 관리자가 아니면 이력도 볼 수 없다. */
+    @Test
+    void 관리자가_아니면_권한_이력을_볼_수_없다() throws Exception {
+        mvc.perform(get("/api/org/grants/audit?resourceType=SPACE&resourceId=sp-9")
+                        .with(asUser(USER_ID, "User")))
+                .andExpect(status().isForbidden());
     }
 }
