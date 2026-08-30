@@ -64,6 +64,7 @@ enum DocType {
 enum PageType {
   PAGE
   FOLDER
+  BLOG
 }
 
 enum SearchSort {

@@ -33,7 +33,7 @@ service WikiContentService {
   rpc FilterVisiblePages(FilterVisiblePagesRequest) returns (FilterVisiblePagesResponse);
 }
 
-enum PageType { PAGE_TYPE_UNSPECIFIED = 0; PAGE = 1; FOLDER = 2; }
+enum PageType { PAGE_TYPE_UNSPECIFIED = 0; PAGE = 1; FOLDER = 2; BLOG = 3; }
 enum PageStatus { PAGE_STATUS_UNSPECIFIED = 0; DRAFT = 1; PUBLISHED = 2; }
 
 message GetPageContentRequest { int64 page_id = 1; }
