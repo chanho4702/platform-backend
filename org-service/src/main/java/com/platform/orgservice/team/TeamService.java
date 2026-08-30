@@ -9,6 +9,7 @@ import com.platform.orgservice.repository.MemberRepository;
 import com.platform.orgservice.repository.TeamMemberRepository;
 import com.platform.orgservice.repository.TeamRepository;
 import com.platform.orgservice.team.dto.TeamCreateRequest;
+import com.platform.orgservice.team.dto.TeamMemberResponse;
 import com.platform.orgservice.team.dto.TeamResponse;
 import com.platform.orgservice.team.dto.TeamUpdateRequest;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,22 @@ public class TeamService {
     @Transactional(readOnly = true)
     public List<TeamResponse> list() {
         return teams.findAll().stream().map(TeamResponse::from).toList();
+    }
+
+    /**
+     * 팀원 목록 — 팀 목록이 열려 있듯 이것도 인증만으로 볼 수 있다(W23). 누가 어느 팀인지는
+     * 조직도이고, 권한 부여 화면이 팀을 고르려면 구성원을 알아야 한다.
+     */
+    @Transactional(readOnly = true)
+    public List<TeamMemberResponse> members(long teamId) {
+        if (!teams.existsById(teamId)) throw new NotFoundException("팀 없음: " + teamId);
+        return teamMembers.findByTeamId(teamId).stream()
+                .map(tm -> new TeamMemberResponse(
+                        tm.getMemberId(),
+                        members.findById(tm.getMemberId()).map(m -> m.getDisplayName())
+                                .orElse("사용자 #" + tm.getMemberId()),
+                        tm.getRole().name()))
+                .toList();
     }
 
     public TeamResponse create(long actorId, TeamCreateRequest req) {

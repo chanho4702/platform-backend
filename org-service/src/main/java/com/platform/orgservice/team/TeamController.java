@@ -2,6 +2,7 @@ package com.platform.orgservice.team;
 
 import com.platform.orgservice.domain.TeamRole;
 import com.platform.orgservice.team.dto.TeamCreateRequest;
+import com.platform.orgservice.team.dto.TeamMemberResponse;
 import com.platform.orgservice.team.dto.TeamResponse;
 import com.platform.orgservice.team.dto.TeamUpdateRequest;
 import jakarta.validation.Valid;
@@ -41,6 +42,11 @@ public class TeamController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
         teams.delete(userId(jwt), id);
+    }
+
+    @GetMapping("/{id}/members")
+    public List<TeamMemberResponse> members(@PathVariable Long id) {
+        return teams.members(id);
     }
 
     @PutMapping("/{id}/members/{memberId}")

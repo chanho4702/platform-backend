@@ -144,4 +144,23 @@ class TeamControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"a-team\",\"description\":null}"))
                 .andExpect(status().isBadRequest());
     }
+
+    /** 팀 관리 화면(W23)이 구성원을 그린다 — 이름을 함께 줘서 디렉터리를 다시 뒤지지 않게 한다. */
+    @Test
+    void 팀원_목록은_이름과_역할을_준다() throws Exception {
+        String created = mvc.perform(post("/api/org/teams").with(asUser(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"플랫폼팀\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long teamId = com.jayway.jsonpath.JsonPath.parse(created).read("$.id", Long.class);
+        mvc.perform(put("/api/org/teams/" + teamId + "/members/" + ADMIN_ID).with(asUser(ADMIN_ID, "Admin")))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/org/teams/" + teamId + "/members").with(asUser(USER_ID, "User")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].memberId").value(ADMIN_ID))
+                .andExpect(jsonPath("$[0].role").value("MEMBER"));
+    }
 }
