@@ -79,6 +79,33 @@ class ReindexAdminControllerTest {
         verify(reindex, never()).start();
     }
 
+    /**
+     * 현황 조회는 관리 화면이 뜰 때 부르고, 동시에 **전역 관리자 여부를 확인하는 창구**다 —
+     * 403이면 화면이 관리 메뉴 자체를 감춘다. 그래서 이 경로의 인가가 다른 경로와 같아야 한다.
+     */
+    @Test
+    void GLOBAL_ADMIN은_색인_현황을_받는다() throws Exception {
+        given(permissions.isGlobalAdmin(ADMIN)).willReturn(true);
+        given(reindex.indexStatus()).willReturn(new ReindexStatusView(
+                "wiki-page-v5", "wiki-attachment-v5", 22L, 3L, null));
+
+        mvc.perform(get("/admin/reindex/status").with(asUser(ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pageIndex").value("wiki-page-v5"))
+                .andExpect(jsonPath("$.pageDocs").value(22))
+                .andExpect(jsonPath("$.runningJob").doesNotExist());
+    }
+
+    @Test
+    void GLOBAL_ADMIN이_아니면_색인_현황도_403이다() throws Exception {
+        given(permissions.isGlobalAdmin(MEMBER)).willReturn(false);
+
+        mvc.perform(get("/admin/reindex/status").with(asUser(MEMBER)))
+                .andExpect(status().isForbidden());
+
+        verify(reindex, never()).indexStatus();
+    }
+
     @Test
     void org_service가_불능이면_403이_아니라_503이다() throws Exception {
         // 권한을 "모른다"를 "없다"로 바꾸면 관리자가 장애 중에 조용히 거부당한다.

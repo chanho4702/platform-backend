@@ -168,6 +168,20 @@ public class OpenSearchIndexService {
     }
 
     /**
+     * 인덱스의 문서 수. 세지 못하면 -1을 준다 — 관리 화면이 "0건"으로 오해하면 안 되기 때문이다.
+     *
+     * 현황 표시에만 쓰므로 실패가 요청을 깨뜨릴 이유가 없다(색인 자체와 무관하다).
+     */
+    public long documentCount(String index) {
+        try {
+            return client.count(c -> c.index(java.util.List.of(index))).count();
+        } catch (Exception e) {
+            log.warn("문서 수 조회 실패 — 현황 표시에서만 쓰이므로 계속한다: index={}", index, e);
+            return -1L;
+        }
+    }
+
+    /**
      * 백필 전용 — **별칭이 아니라 물리 인덱스**에 직접 대량 색인한다.
      *
      * 별칭에 쓰면 재색인 중에도 구 인덱스로 들어가버려 새 인덱스가 영원히 비어 있게 된다.

@@ -39,6 +39,16 @@ public class ReindexAdminController {
         return ResponseEntity.accepted().body(job);
     }
 
+    /**
+     * 색인 현황. 관리 화면이 뜰 때 부르고, **전역 관리자 여부를 확인하는 창구**이기도 하다 —
+     * 아니면 403이 오고, 화면은 관리 메뉴 자체를 감춘다.
+     */
+    @GetMapping("/status")
+    public ReindexStatusView indexStatus(@AuthenticationPrincipal Jwt jwt) {
+        requireGlobalAdmin(jwt);
+        return reindex.indexStatus();
+    }
+
     @GetMapping("/{jobId}")
     public ReindexJobView status(@PathVariable String jobId, @AuthenticationPrincipal Jwt jwt) {
         requireGlobalAdmin(jwt);

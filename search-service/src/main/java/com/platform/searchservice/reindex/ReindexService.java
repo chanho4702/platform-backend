@@ -135,6 +135,24 @@ public class ReindexService {
         return jobs.size();
     }
 
+    /**
+     * 색인 현황 — 관리 화면이 "지금 무엇이 서비스 중이고 몇 건인가"를 보여준다.
+     *
+     * 이 값들이 필요한 이유는 재색인이 필요한지 판단할 근거가 달리 없기 때문이다. 색인에 필드를
+     * 더한 배포 뒤에 세대가 그대로면 새 필드는 비어 있고, 검색 필터는 조용히 0건을 낸다.
+     */
+    public ReindexStatusView indexStatus() {
+        String pageIndex = indexes.resolveAliasIndex(IndexNames.PAGE_ALIAS);
+        String attachmentIndex = indexes.resolveAliasIndex(IndexNames.ATTACHMENT_ALIAS);
+        String running = activeJobId.get();
+        return new ReindexStatusView(
+                pageIndex,
+                attachmentIndex,
+                indexes.documentCount(pageIndex),
+                indexes.documentCount(attachmentIndex),
+                running == null ? null : status(running));
+    }
+
     public ReindexJobView status(String jobId) {
         ReindexJob job = jobs.get(jobId);
         if (job == null) {
