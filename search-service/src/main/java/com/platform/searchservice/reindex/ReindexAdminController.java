@@ -1,6 +1,6 @@
 package com.platform.searchservice.reindex;
 
-import com.platform.searchservice.common.ForbiddenException;
+import com.platform.common.error.ForbiddenException;
 import com.platform.searchservice.permission.PermissionClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

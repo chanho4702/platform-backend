@@ -1,6 +1,6 @@
 package com.platform.searchservice.search;
 
-import com.platform.searchservice.common.ServiceUnavailableException;
+import com.platform.common.error.ServiceUnavailableException;
 import com.platform.searchservice.index.IndexNames;
 import com.platform.searchservice.permission.AccessScope;
 import org.opensearch.client.opensearch._types.SortOrder;

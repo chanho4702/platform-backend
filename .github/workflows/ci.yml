@@ -91,8 +91,8 @@ jobs:
           distribution: temurin
           java-version: '24'
       - uses: gradle/actions/setup-gradle@v4
-      - name: 태그 버전으로 common-proto 발행
-        run: ./gradlew :common-proto:publish -PprotoVersion=${GITHUB_REF_NAME#v}
+      - name: 태그 버전으로 common-proto·common-starter 발행
+        run: ./gradlew :common-proto:publish :common-starter:publish -PprotoVersion=${GITHUB_REF_NAME#v} -PstarterVersion=${GITHUB_REF_NAME#v}
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

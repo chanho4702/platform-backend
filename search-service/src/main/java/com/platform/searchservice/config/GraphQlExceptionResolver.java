@@ -1,6 +1,6 @@
 package com.platform.searchservice.config;
 
-import com.platform.searchservice.common.ServiceUnavailableException;
+import com.platform.common.error.ServiceUnavailableException;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;

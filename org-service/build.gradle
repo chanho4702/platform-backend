@@ -16,6 +16,7 @@ def grpcVersion = '1.69.0'
 
 dependencies {
     implementation project(':common-proto')
+    implementation project(':common-starter')
     // 유레카 자기등록 — dev 모드에서 게이트웨이 lb://org-service가 이 등록을 바라본다 (docker 프로필은 off)
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
     implementation 'org.springframework.boot:spring-boot-starter-web'

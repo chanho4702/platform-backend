@@ -1,6 +1,6 @@
 package com.platform.orgservice.team;
 
-import com.platform.orgservice.common.NotFoundException;
+import com.platform.common.error.NotFoundException;
 import com.platform.orgservice.domain.Team;
 import com.platform.orgservice.domain.TeamMember;
 import com.platform.orgservice.domain.TeamRole;

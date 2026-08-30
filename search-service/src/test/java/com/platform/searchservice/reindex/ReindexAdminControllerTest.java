@@ -1,8 +1,8 @@
 package com.platform.searchservice.reindex;
 
-import com.platform.searchservice.common.ConflictException;
-import com.platform.searchservice.common.NotFoundException;
-import com.platform.searchservice.common.ServiceUnavailableException;
+import com.platform.common.error.ConflictException;
+import com.platform.common.error.NotFoundException;
+import com.platform.common.error.ServiceUnavailableException;
 import com.platform.searchservice.permission.PermissionClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -1,0 +1,2 @@
+com.platform.common.security.PlatformResourceServerAutoConfiguration
+com.platform.common.web.PlatformWebAutoConfiguration

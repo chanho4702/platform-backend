@@ -1,7 +1,7 @@
 package com.platform.searchservice.reindex;
 
-import com.platform.searchservice.common.ConflictException;
-import com.platform.searchservice.common.NotFoundException;
+import com.platform.common.error.ConflictException;
+import com.platform.common.error.NotFoundException;
 import com.platform.searchservice.content.WikiContentClient;
 import com.platform.searchservice.index.AttachmentDoc;
 import com.platform.searchservice.index.IndexNames;

@@ -9,7 +9,7 @@ import com.platform.proto.org.v1.ListUserGrantsResponse;
 import com.platform.proto.org.v1.PermissionServiceGrpc;
 import com.platform.proto.org.v1.ResourceType;
 import com.platform.proto.org.v1.Role;
-import com.platform.searchservice.common.ServiceUnavailableException;
+import com.platform.common.error.ServiceUnavailableException;
 import io.grpc.ManagedChannel;
 import io.grpc.Server;
 import io.grpc.Status;

@@ -8,7 +8,7 @@ import com.platform.proto.wiki.v1.ListAttachmentsRequest;
 import com.platform.proto.wiki.v1.ListPageContentsRequest;
 import com.platform.proto.wiki.v1.PageContent;
 import com.platform.proto.wiki.v1.WikiContentServiceGrpc;
-import com.platform.searchservice.common.ServiceUnavailableException;
+import com.platform.common.error.ServiceUnavailableException;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;

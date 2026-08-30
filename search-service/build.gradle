@@ -26,6 +26,7 @@ dependencies {
     // 같은 멀티모듈이라 GitHub Packages 발행본이 아니라 프로젝트 의존으로 쓴다 —
     // proto를 고칠 때마다 발행하지 않아도 되고, 버전 어긋남이 원천적으로 생기지 않는다.
     implementation project(':common-proto')
+    implementation project(':common-starter')
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-security'

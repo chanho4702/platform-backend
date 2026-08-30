@@ -1,6 +1,6 @@
 package com.platform.orgservice.grant;
 
-import com.platform.orgservice.common.NotFoundException;
+import com.platform.common.error.NotFoundException;
 import com.platform.orgservice.domain.GrantAudit;
 import com.platform.orgservice.domain.GrantEntry;
 import com.platform.orgservice.domain.ResourceKind;

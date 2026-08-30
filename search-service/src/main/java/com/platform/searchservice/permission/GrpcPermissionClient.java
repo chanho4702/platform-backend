@@ -7,7 +7,7 @@ import com.platform.proto.org.v1.ListUserGrantsRequest;
 import com.platform.proto.org.v1.ListUserGrantsResponse;
 import com.platform.proto.org.v1.PermissionServiceGrpc;
 import com.platform.proto.org.v1.ResourceType;
-import com.platform.searchservice.common.ServiceUnavailableException;
+import com.platform.common.error.ServiceUnavailableException;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import lombok.extern.slf4j.Slf4j;
