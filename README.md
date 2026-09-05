@@ -242,6 +242,8 @@ org-service의 REST 계약을 코드에서 뽑아 OpenAPI 3.1 JSON으로 낸다.
 
 공통 오류는 `config/OpenApiConfig`의 `OperationCustomizer`가 붙인다: 401·403은 모든 오퍼레이션에, 404는 경로 변수를 받는 오퍼레이션에, 400은 본문을 받는 오퍼레이션에. 사유가 제각각인 409만 `@ConflictResponse("사유")`를 붙인 곳에 그 사유로 들어간다. 응답 스키마는 common-starter의 `{"error": 메시지}` 계약(`PlatformError`)이다.
 
+> **400은 "본문을 받는 오퍼레이션" 규칙이지 완전한 목록이 아니다.** 엄밀히 따지면 모든 컨트롤러가 `Long.parseLong(jwt.getSubject())`로 호출자를 푼다 — `NumberFormatException`은 `IllegalArgumentException`이라 common-starter가 400으로 매핑하므로, 31개 오퍼레이션 전부가 이론상 400을 낼 수 있다. 그걸 다 적으면 아무 정보도 주지 않으므로, **읽는 사람이 잘못된 값을 보내서 실제로 400을 만들 수 있는 자리**에만 적는다. wiki·alm도 같은 규칙을 쓴다(2026-09-05 합의).
+
 `springdoc.override-with-generic-response: false`인 이유: 켜 두면 `@RestControllerAdvice`가 다루는 예외가 전부 모든 오퍼레이션의 응답으로 복사돼, 목록 조회에도 404·409·503이 붙는다. 그러면 "이 엔드포인트가 실제로 내는 코드"라는 뜻이 사라진다.
 
 `OpenApiDocsTest`가 게이트다 — 스펙이 200인지, 태그·요약 없는 오퍼레이션이 0개인지, 성공 응답이 빠진 곳이 없는지, 내부 경로가 새지 않는지, `bearerAuth`가 전역인지를 검증한다.
