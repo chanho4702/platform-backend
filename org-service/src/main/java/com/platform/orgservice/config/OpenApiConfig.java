@@ -84,7 +84,7 @@ public class OpenApiConfig {
                 putIfAbsent(responses, "404", "대상을 찾을 수 없습니다.");
             }
             if (takesRequestBody(handlerMethod)) {
-                putIfAbsent(responses, "400", "요청이 올바르지 않습니다 — 필수 값 누락이나 규칙 위반.");
+                putIfAbsent(responses, "400", "요청 검증 실패");
             }
             ConflictResponse conflict = handlerMethod.getMethodAnnotation(ConflictResponse.class);
             if (conflict != null) {
