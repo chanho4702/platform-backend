@@ -27,7 +27,7 @@ import java.time.Instant;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class GrantAudit {
 
-    public enum Action { GRANTED, REVOKED }
+    public enum Action { GRANTED, CHANGED, REVOKED }
 
     private static final int MAX_LABEL = 255;
 

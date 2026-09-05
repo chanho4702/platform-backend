@@ -16,4 +16,12 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
     Optional<TeamMember> findByTeamIdAndMemberId(Long teamId, Long memberId);
 
     List<TeamMember> findByTeamId(Long teamId);
+
+    List<TeamMember> findByMemberId(Long memberId);
+
+    /** 팀 목록의 memberCount — 팀마다 구성원을 열지 않으려고 한 번에 센다(N+1 방지). */
+    @Query("select tm.teamId, count(tm) from TeamMember tm group by tm.teamId")
+    List<Object[]> countByTeam();
+
+    long countByTeamIdAndRole(Long teamId, com.platform.orgservice.domain.TeamRole role);
 }

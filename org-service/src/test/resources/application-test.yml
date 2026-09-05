@@ -27,6 +27,12 @@ platform:
     enabled: false   # 단위 테스트에서 실포트 열지 않음 — gRPC는 in-process로 검증
   bootstrap-admin-id: ""
   org:
+    # 서비스 간 경로(/internal/org/**) 테스트용 — 배포에서는 ORG_INTERNAL_TOKEN으로 주입한다
+    internal-token: test-internal-token
+    invitation:
+      base-url: https://platform.test
+      # 스케줄러가 테스트 중에 끼어들지 않게 먼 시각으로 둔다(만료는 서비스 호출로 직접 검증)
+      expiry-cron: "0 0 3 1 1 *"
     avatar:
       files-dir: build/test-avatars
       s3:

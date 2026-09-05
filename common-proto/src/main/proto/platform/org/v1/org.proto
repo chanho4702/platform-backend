@@ -22,6 +22,9 @@ service PermissionService {
   rpc LookupMembers(LookupMembersRequest) returns (LookupMembersResponse);
   // 이름으로 우리 팀을 찾는다(0.15.0) — 원본 그룹 이름을 팀에 짝짓는다.
   rpc LookupTeams(LookupTeamsRequest) returns (LookupTeamsResponse);
+  // id로 사람을 읽는다(0.16.0) — LookupMembers와 방향이 반대다(id→이메일).
+  // ALM 알림이 "이 담당자에게 메일을 보내려면 주소가 무엇인가"를 물을 창구다.
+  rpc GetMembers(GetMembersRequest) returns (GetMembersResponse);
 }
 
 enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
@@ -40,6 +43,17 @@ message CheckPermissionRequest {
 message CheckPermissionResponse {
   bool allowed = 1;
   Role effective_role = 2;     // grant 없으면 ROLE_UNSPECIFIED
+  // 왜 거부됐는가(0.16.0). 허용이면 빈 문자열.
+  //
+  // 상태로 막힌 것(PENDING/SUSPENDED/DEACTIVATED)과 권한이 모자란 것(NO_GRANT/INSUFFICIENT_ROLE)은
+  // 소비자가 사용자에게 해야 할 말이 다르다 — 전자는 "관리자에게 승인/해제를 요청하세요",
+  // 후자는 "이 스페이스 관리자에게 권한을 요청하세요"다. 지금까지는 둘 다 그냥 allowed=false였다.
+  //
+  // 값: "" | "PENDING" | "SUSPENDED" | "DEACTIVATED" | "NO_GRANT" | "INSUFFICIENT_ROLE".
+  // **이 값으로 장애를 판단하지 말 것** — org 불능은 gRPC 상태 코드(UNAVAILABLE/DEADLINE_EXCEEDED)로
+  // 오고, 이 응답은 언제나 "정상적으로 판정한 거부"다. 모르는 값은 일반 거부로 다뤄야 한다
+  // (뒤에 값이 늘 수 있다).
+  string denied_reason = 3;
 }
 
 message ListUserGrantsRequest {
@@ -111,3 +125,21 @@ message TeamMatch {
   string name = 3;
 }
 message LookupTeamsResponse { repeated TeamMatch matches = 1; }
+
+// ── 사람 조회(0.16.0) ─────────────────────────────────────────────
+// id를 아는 쪽에서 이름·이메일을 묻는다. LookupMembers(이메일→id)와 방향이 반대다.
+// ALM 알림이 담당자에게 메일을 보낼 때 쓴다.
+//
+// LookupMembers와 달리 **활성 여부로 거르지 않는다** — 호출측이 status를 보고 결정한다
+// (퇴사자에게 알림을 안 보내는 것과, 퇴사자 이름을 화면에 못 그리는 것은 다른 문제다).
+// 없는 id는 응답에서 빠진다(순서·개수를 요청과 맞추지 않는다).
+// 한 요청의 id 상한은 200이고 넘으면 INVALID_ARGUMENT다.
+message GetMembersRequest { repeated int64 ids = 1; }
+message MemberInfo {
+  int64 id = 1;
+  string display_name = 2;
+  string email = 3;           // 없으면 빈 문자열
+  string status = 4;          // PENDING | ACTIVE | SUSPENDED | DEACTIVATED
+  string kind = 5;            // HUMAN | AGENT
+}
+message GetMembersResponse { repeated MemberInfo members = 1; }

@@ -33,6 +33,9 @@ public class TeamMember {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** 리더 지정·해제(PATCH). 행을 지웠다 다시 만들면 합류 시각이 사라진다. */
+    public void changeRole(TeamRole role) { this.role = role; }
+
     public static TeamMember of(Long teamId, Long memberId, TeamRole role) {
         TeamMember tm = new TeamMember();
         tm.teamId = teamId;

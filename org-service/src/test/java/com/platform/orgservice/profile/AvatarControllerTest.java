@@ -14,6 +14,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import java.nio.charset.StandardCharsets;
 
+import static com.platform.orgservice.TestAuth.active;
 import static com.platform.orgservice.TestAuth.asUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -50,6 +51,9 @@ class AvatarControllerTest {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         profiles.deleteAll();
         members.deleteAll();
+        // U1부터 처음 보는 사용자는 PENDING으로 격리된다 — 아바타 화면 테스트는 활성 사용자로 시작한다
+        active(members, 7L, "Alice");
+        active(members, 8L, "Bob");
     }
 
     private MockMultipartFile png(String name) {

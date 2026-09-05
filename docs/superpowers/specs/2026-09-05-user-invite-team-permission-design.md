@@ -140,3 +140,68 @@ V6 team: kind VARCHAR(16) NOT NULL DEFAULT 'STANDARD' ('STANDARD','EVERYONE'); "
 - ⚠️ 리소스 ADMIN의 초대 허용 범위 — 기본: 허용(프리셋은 자기 리소스로 제한). 조직 정책상 GLOBAL ADMIN만이면 프로퍼티로 끈다.
 - ⚠️ SUSPENDED 사용자의 기존 세션 — refresh 때 거부(AT 만료까지 최대 수 분 유효). 즉시 차단은 auth-server RT 폐기 API 후속.
 - ⚠️ 이메일 검증 없는 비밀번호 가입의 초대 수락은 토큰 링크 경유만(§2). SMTP 생기면 `verifyEmail` 켜고 완화.
+
+## 10. 구현 메모 (U1·U2, 2026-09-05)
+
+스펙과 다르게 정한 것과 그 이유. 나머지는 §3·§4 그대로다.
+
+- **`GET /api/org/members`는 배열을 유지**하고 페이지네이션은 **별도 경로 `GET /api/org/members/page`**다
+  (설계 리뷰 반영). 한 경로가 두 모양을 내면 어느 쪽이 계약인지 흐려진다. 목록의 기본 필터는
+  `status=ACTIVE&kind=HUMAN`이고 전부는 `status=ALL&kind=ALL`이다 — 소비자가 어차피 ACTIVE만 걸러 쓰고
+  AGENT는 아무도 거르지 않아 사람 목록에 페르소나가 섞여 보였다. **U3(`@chanho/org-admin`)의 사용자 목록은
+  `/members/page`를 쓴다.**
+- **`PATCH /members/{id}`는 상태 전이만** 받는다(`displayName` 제외, 없으면 400 `변경할 상태를 지정하세요`).
+  `MemberMirrorFilter`가 요청마다 JWT `name`으로 덮어쓰므로 고쳐 봐야 다음 로그인에 되돌아간다 —
+  이름의 원천은 Keycloak 프로필이다.
+- **common-proto 0.16.0(추가만)**: `GetMembers(ids)`(id→이름·이메일·상태·종류, ALM 알림용)와
+  `CheckPermissionResponse.denied_reason = 3`. 기존 필드 번호는 그대로다. `denied_reason`은
+  `PENDING`·`SUSPENDED`·`DEACTIVATED`·`NO_GRANT`·`INSUFFICIENT_ROLE`이고 허용이면 빈 문자열이며,
+  **장애 판단에 쓰지 않는다**(org 불능은 gRPC 상태 코드로 온다). 상태 fail-closed도 오류가 아니라
+  정상적으로 판정한 거부로 응답한다.
+- **목록의 `inviteUrl`은 항상 `null`이다.** §3.3은 "PENDING만 재노출"이라고 했지만 §3.1이 요구한 대로
+  토큰은 sha256만 저장하므로 해시에서 링크를 되살릴 수 없다. 대신 `POST /invitations/{id}/resend`가
+  새 토큰과 `inviteUrl`을 주고, `?mail=false`로 메일 없이 링크만 받을 수 있다.
+- **`invitation_team`·`invitation_grant`는 복합 PK 대신 대리키 + UNIQUE**다(`team_member`와 같은 모양).
+  `invitation_grant.resource_id`는 `BIGINT`가 아니라 `VARCHAR(100)`이다 — `grant_entry.resource_id`가
+  그렇고, 스페이스 id가 숫자가 아니다.
+- **`member_event`는 `member_id`·`invitation_id`가 모두 nullable**이고 최소 하나를 요구하는 CHECK가 붙는다.
+  초대를 만드는 시점에는 그 사람의 계정이 없어 `member_id`를 채울 수 없고, `/invitations/{id}/events`는
+  그 행들을 읽어야 한다.
+- **REST 격리는 PENDING뿐 아니라 SUSPENDED·DEACTIVATED에도 적용**한다(문구는 각각
+  `정지된 계정입니다`·`비활성된 계정입니다`). §3.2는 PENDING만 적었지만, 정지된 사람이 org REST로
+  사용자 디렉터리를 계속 읽을 이유가 없고 gRPC 쪽 기준과도 어긋난다.
+- **gRPC `CheckPermission`의 fail-closed는 member 행이 있을 때만** 적용한다. 행이 아예 없는 사용자
+  (아직 org REST를 한 번도 거치지 않음)를 상태로 막으면 미러링 순서에 따라 기존 사용자가 무작위로
+  차단된다 — 그런 사용자는 grant도 없어 어차피 거부된다.
+- **초대 대상이 이미 우리 계정이면**: `ACTIVE`·`SUSPENDED`는 `409`(초대해도 아무 일이 일어나지 않으므로
+  조용히 쌓이게 두지 않는다), `PENDING`은 허용, `DEACTIVATED`는 허용하면서 Keycloak 계정을 다시 열고
+  멤버를 `PENDING`으로 되돌린다 — §3.2가 "되돌리려면 재초대"라고 한 그 경로다.
+- **팀원 추가·제거 경로는 기존 `PUT/DELETE /teams/{id}/members/{memberId}`를 유지**하고 역할 변경만
+  `PATCH`로 더했다(§3.3 표의 `POST/DELETE /teams/{id}/members`는 기존 경로를 가리키는 표기로 읽었다).
+- **`platform.org.invitation.base-url`**이 초대 링크 호스트다(§3.4의 `mail.base-url`이 아니라).
+  비어 있으면 상대 경로 `/invite/{token}`을 준다.
+- **auth-server의 무효 링크 페이지는 HTTP 200**이다. 4xx/5xx는 프록시·게이트웨이가 자기 오류 페이지로
+  가로챌 수 있는데, 이 화면은 사용자에게 무엇을 하라고 말해야 한다.
+- **`login_hint`는 `InviteLoginHintResolver`**(기본 resolver 위임)가 세션 값을 보고 붙인다. PKCE·state·nonce
+  생성 규칙을 직접 만들지 않기 위해 감싸기만 했다.
+- **테스트 픽스처가 바뀌었다.** JIT 미러링이 PENDING을 만들게 되면서 기존 컨트롤러 테스트가 403을 받는다.
+  `TestAuth.active(members, id, name)`로 활성 멤버를 심고 시작하도록 고쳤다(팀·권한·아바타·에이전트 테스트).
+
+- **UI 레인 요청 반영(2026-09-05)**: `GET /teams/{id}/members`에 `email` 추가, grant 목록 응답에
+  `subjectName` 추가(`id`는 이미 있었다). 둘 다 목록 질의를 한 번에 묶어 읽는다(N+1 방지).
+  `GET /teams`의 `q`·`kind`·`memberCount`·`myRole`은 §3.3대로 이미 구현돼 있다.
+- **요청 키**: grant 생성은 `resourceType`, 초대·승인 프리셋은 `scope`다. 프리셋은 "지금 만들 grant"가
+  아니라 "수락하면 만들 조건"이라 같은 이름을 쓰면 두 요청이 같은 것으로 읽힌다.
+- **`base-url`의 env 키는 둘 다 동작한다**: yml 플레이스홀더 `ORG_INVITATION_BASE_URL`과 프로퍼티 경로를
+  옮긴 `PLATFORM_ORG_INVITATION_BASE_URL`(완화 바인딩). 후자가 이긴다(systemEnvironment 우선, 실측).
+  compose(fcb08e5)는 후자를 쓰므로 그대로 동작한다.
+
+### 남은 것
+
+- **U4(인프라)**: realm에 `platform-admin` service account 클라이언트, compose env(`ORG_INTERNAL_TOKEN`·
+  `KC_ADMIN_*`·`PLATFORM_MAIL_*`·`ORG_INVITATION_BASE_URL`). 그전까지 Keycloak 계정 잠금은 no-op이고
+  `member_event`에만 남는다. 라우팅은 확인 완료: gateway-server org 라우트는 `/api/org/**`만 잡고
+  (주석으로 고정), nginx `infra/nginx/default.conf`에는 `/internal` 프록시가 없다(정적 폴백으로 떨어진다).
+- **wiki-backend·alm-backend**: `denied_reason`·`GetMembers` 소비는 아직 없다(0.16.0 태그 후 별도 작업).
+- **U3(공용 화면)**: 사용자 목록은 `/members/page`를 쓸 것. `inviteUrl`은 생성·재발송 응답에서만 받는다.
+- SUSPENDED 사용자의 기존 AT는 만료까지 유효하다(§9 ⚠️ 그대로). 즉시 차단은 auth-server RT 폐기 API 후속.

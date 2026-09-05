@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static com.platform.orgservice.TestAuth.active;
 import static com.platform.orgservice.TestAuth.asUser;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -27,6 +28,7 @@ class GrantControllerTest {
     @Autowired WebApplicationContext context;
     @Autowired GrantEntryRepository grants;
     @Autowired com.platform.orgservice.repository.GrantAuditRepository audits;
+    @Autowired com.platform.orgservice.repository.MemberRepository members;
     MockMvc mvc;
 
     static final long ADMIN_ID = 100L;
@@ -40,6 +42,10 @@ class GrantControllerTest {
         audits.deleteAll();
         grants.deleteAll();
         grants.save(GrantEntry.globalAdmin(ADMIN_ID));
+        // U1부터 처음 보는 사용자는 PENDING으로 격리된다 — 권한 화면 테스트는 활성 사용자로 시작한다
+        active(members, ADMIN_ID, "Admin");
+        active(members, USER_ID, "Bob");
+        active(members, SPACE_ADMIN_ID, "SpaceAdmin");
     }
 
     /**

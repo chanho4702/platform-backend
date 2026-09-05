@@ -44,6 +44,36 @@ platform:
   # 최초 GLOBAL ADMIN 부트스트랩 — auth-server user id. 빈 값이면 시드 생략.
   bootstrap-admin-id: ${PLATFORM_BOOTSTRAP_ADMIN_ID:}
   org:
+    # 서비스 간 전용 경로(/internal/org/**)의 토큰. 비어 있으면 내부 API 전체가 403이다(fail-closed).
+    internal-token: ${ORG_INTERNAL_TOKEN:}
+    invitation:
+      # 초대 유효기간(ISO-8601 기간). 기본 7일.
+      ttl: ${ORG_INVITATION_TTL:P7D}
+      # 초대 링크의 호스트(예: https://platform.example.com). 경로는 auth-server의 /invite/{token}.
+      # 비우면 상대 경로(/invite/...)로 내려가고 화면이 자기 오리진을 붙인다.
+      #
+      # 이 값은 env 키가 둘이다: 아래 플레이스홀더의 ORG_INVITATION_BASE_URL과, 프로퍼티 경로를
+      # 그대로 대문자로 옮긴 PLATFORM_ORG_INVITATION_BASE_URL(Spring 완화 바인딩). 후자가 이긴다 —
+      # systemEnvironment가 application.yml보다 우선순위가 높다(2026-09-05 실측). compose는 후자를 쓴다.
+      base-url: ${ORG_INVITATION_BASE_URL:}
+      # 토큰 없이 이메일 대조만으로 초대를 소진해도 되는 로그인 경로(콤마 구분).
+      # 구글 IdP는 trustEmail이라 이메일이 검증된 값이다 — 비밀번호 가입은 링크 경유만 인정한다.
+      email-match-providers: ${ORG_INVITATION_EMAIL_MATCH_PROVIDERS:GOOGLE}
+      # 리소스(SPACE/PROJECT) ADMIN의 초대 허용. 조직 정책상 전역 관리자만이면 false.
+      resource-admin-enabled: ${ORG_INVITATION_RESOURCE_ADMIN:true}
+      expiry-cron: ${ORG_INVITATION_EXPIRY_CRON:0 */10 * * * *}
+    mail:
+      # 미설정(host 비어 있음)이면 메일을 보내지 않고 화면이 초대 링크 복사로 안내한다.
+      host: ${PLATFORM_MAIL_HOST:}
+      port: ${PLATFORM_MAIL_PORT:587}
+      username: ${PLATFORM_MAIL_USERNAME:}
+      password: ${PLATFORM_MAIL_PASSWORD:}
+      from: ${PLATFORM_MAIL_FROM:}
+    keycloak:
+      # 계정 비활성/활성(Admin REST). 시크릿이 없으면 no-op이고 member_event에만 흔적이 남는다.
+      issuer-uri: ${KEYCLOAK_ISSUER_URI:}
+      admin-client-id: ${KC_ADMIN_CLIENT_ID:platform-admin}
+      admin-client-secret: ${KC_ADMIN_CLIENT_SECRET:}
     avatar:
       # 기본은 로컬 파일 — dev 오프셋 클러스터는 MinIO 없이 뜬다. 운영 compose가 s3.enabled를 켠다.
       files-dir: ${ORG_FILES_DIR:./data/avatars}

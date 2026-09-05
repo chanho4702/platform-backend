@@ -3,6 +3,7 @@ package com.platform.orgservice.team;
 import com.platform.orgservice.domain.TeamRole;
 import com.platform.orgservice.team.dto.TeamCreateRequest;
 import com.platform.orgservice.team.dto.TeamMemberResponse;
+import com.platform.orgservice.team.dto.TeamMemberRoleRequest;
 import com.platform.orgservice.team.dto.TeamResponse;
 import com.platform.orgservice.team.dto.TeamUpdateRequest;
 import jakarta.validation.Valid;
@@ -22,8 +23,9 @@ public class TeamController {
     private final TeamService teams;
 
     @GetMapping
-    public List<TeamResponse> list() {
-        return teams.list();
+    public List<TeamResponse> list(@AuthenticationPrincipal Jwt jwt,
+                                   @RequestParam(required = false) String q) {
+        return teams.list(userId(jwt), q);
     }
 
     @PostMapping
@@ -53,6 +55,14 @@ public class TeamController {
     public void addMember(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
                           @PathVariable Long memberId, @RequestParam(defaultValue = "MEMBER") TeamRole role) {
         teams.addMember(userId(jwt), id, memberId, role);
+    }
+
+    /** 리더 지정·해제. 팀원 추가·제거와 같은 권한(전역 관리자 또는 그 팀 리더). */
+    @PatchMapping("/{id}/members/{memberId}")
+    public TeamMemberResponse changeMemberRole(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
+                                               @PathVariable Long memberId,
+                                               @RequestBody TeamMemberRoleRequest req) {
+        return teams.changeMemberRole(userId(jwt), id, memberId, req.role());
     }
 
     @DeleteMapping("/{id}/members/{memberId}")

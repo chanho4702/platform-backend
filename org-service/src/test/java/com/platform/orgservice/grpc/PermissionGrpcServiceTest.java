@@ -55,6 +55,104 @@ class PermissionGrpcServiceTest {
         server.shutdownNow();
     }
 
+    /**
+     * 상태가 ACTIVE가 아니면 grant를 보기 전에 거부한다(U1 fail-closed).
+     *
+     * 승인 대기·정지·퇴사자는 권한을 그대로 들고 있을 수 있는데, 그 권한이 살아 있으면 wiki·alm은
+     * 아무 일도 없었던 것처럼 문서를 열어 준다. 상태 판정을 org 한 곳에 두면 소비 서비스가 각자 기억할 필요가 없다.
+     */
+    /**
+     * 상태로 막힌 거부는 <b>정상 응답</b>이다 — 오류 상태(UNAVAILABLE 등)로 올리지 않는다.
+     * 소비자가 "org가 죽었다"와 "이 사람이 막혔다"를 구분할 수 있어야 하기 때문이다.
+     */
+    @Test
+    void CheckPermission_비활성_계정은_grant가_있어도_거부하고_사유를_준다() {
+        grants.save(GrantEntry.of(SubjectType.USER, 42L, ResourceKind.SPACE, "sp-1", GrantRole.ADMIN));
+        memberRepo.save(com.platform.orgservice.domain.Member.joining(42L, "승인대기", "pending@test.com"));
+
+        CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                .setUserId(42L).setResourceType(ResourceType.SPACE).setResourceId("sp-1")
+                .setAction(Action.VIEW).build());
+
+        assertThat(res.getAllowed()).isFalse();
+        assertThat(res.getEffectiveRole()).isEqualTo(Role.ROLE_UNSPECIFIED);
+        assertThat(res.getDeniedReason()).isEqualTo("PENDING");
+    }
+
+    /** grant가 아예 없는 것과 역할이 모자란 것은 화면이 사용자에게 해야 할 말이 다르다. */
+    @Test
+    void CheckPermission_거부_사유가_grant_없음과_역할_부족을_구분한다() {
+        CheckPermissionResponse noGrant = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                .setUserId(51L).setResourceType(ResourceType.SPACE).setResourceId("sp-9")
+                .setAction(Action.VIEW).build());
+        assertThat(noGrant.getAllowed()).isFalse();
+        assertThat(noGrant.getDeniedReason()).isEqualTo("NO_GRANT");
+
+        grants.save(GrantEntry.of(SubjectType.USER, 51L, ResourceKind.SPACE, "sp-9", GrantRole.VIEWER));
+        CheckPermissionResponse tooLow = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                .setUserId(51L).setResourceType(ResourceType.SPACE).setResourceId("sp-9")
+                .setAction(Action.EDIT).build());
+        assertThat(tooLow.getAllowed()).isFalse();
+        assertThat(tooLow.getDeniedReason()).isEqualTo("INSUFFICIENT_ROLE");
+
+        CheckPermissionResponse allowed = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                .setUserId(51L).setResourceType(ResourceType.SPACE).setResourceId("sp-9")
+                .setAction(Action.VIEW).build());
+        assertThat(allowed.getAllowed()).isTrue();
+        assertThat(allowed.getDeniedReason()).isEmpty();
+    }
+
+    /**
+     * id로 사람을 읽는다(0.16.0). LookupMembers와 방향이 반대이고, <b>활성 여부로 거르지 않는다</b> —
+     * 퇴사자에게 알림을 안 보내는 것과 퇴사자 이름을 못 그리는 것은 다른 문제라 상태를 실어 준다.
+     */
+    @Test
+    void GetMembers는_id로_이름과_이메일을_주고_상태로_거르지_않는다() {
+        memberRepo.save(com.platform.orgservice.domain.Member.of(61L, "활성사람", "active@test.com"));
+        var 퇴사자 = com.platform.orgservice.domain.Member.of(62L, "퇴사자", "gone@test.com");
+        퇴사자.deactivate(java.time.Instant.now());
+        memberRepo.save(퇴사자);
+
+        GetMembersResponse res = stub.getMembers(GetMembersRequest.newBuilder()
+                .addIds(61L).addIds(62L).addIds(9999L).build());
+
+        assertThat(res.getMembersList()).hasSize(2); // 없는 id는 응답에서 빠진다
+        assertThat(res.getMembersList()).anySatisfy(m -> {
+            assertThat(m.getId()).isEqualTo(61L);
+            assertThat(m.getEmail()).isEqualTo("active@test.com");
+            assertThat(m.getStatus()).isEqualTo("ACTIVE");
+            assertThat(m.getKind()).isEqualTo("HUMAN");
+        });
+        assertThat(res.getMembersList()).anySatisfy(m ->
+                assertThat(m.getStatus()).isEqualTo("DEACTIVATED"));
+    }
+
+    @Test
+    void GetMembers는_빈_요청에_빈_응답을_준다() {
+        assertThat(stub.getMembers(GetMembersRequest.newBuilder().build()).getMembersList()).isEmpty();
+    }
+
+    @Test
+    void GetMembers는_상한을_넘으면_INVALID_ARGUMENT다() {
+        GetMembersRequest.Builder req = GetMembersRequest.newBuilder();
+        for (long i = 0; i < 201; i++) req.addIds(i);
+
+        assertThatThrownBy(() -> stub.getMembers(req.build()))
+                .hasMessageContaining("INVALID_ARGUMENT");
+    }
+
+    /** member 행이 아예 없으면 상태로 막지 않는다 — 미러링 순서에 따라 기존 사용자가 무작위로 차단된다. */
+    @Test
+    void CheckPermission_member_행이_없으면_평소대로_판정한다() {
+        grants.save(GrantEntry.of(SubjectType.USER, 43L, ResourceKind.SPACE, "sp-1", GrantRole.EDITOR));
+
+        CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                .setUserId(43L).setResourceType(ResourceType.SPACE).setResourceId("sp-1")
+                .setAction(Action.EDIT).build());
+
+        assertThat(res.getAllowed()).isTrue();
+    }
+
     @Test
     void CheckPermission_grant보유자는_allowed_true() {
         grants.save(GrantEntry.of(SubjectType.USER, 1L, ResourceKind.SPACE, "sp-1", GrantRole.EDITOR));

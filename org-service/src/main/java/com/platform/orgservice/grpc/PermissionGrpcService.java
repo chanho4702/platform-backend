@@ -191,6 +191,17 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
         return at <= 0 ? null : value.substring(0, at);
     }
 
+    /**
+     * 권한 판정.
+     *
+     * <p>계정 상태가 ACTIVE가 아니면 grant를 보기 전에 거부한다(fail-closed). 승인 대기·정지·퇴사자는
+     * 권한을 그대로 들고 있을 수 있는데, 그 권한이 살아 있으면 wiki·alm은 아무 일도 없었던 것처럼
+     * 문서를 열어 준다. 상태 판정을 org 한 곳에 두면 소비 서비스가 각자 기억할 필요가 없다.
+     *
+     * <p>member 행이 아예 없으면(아직 org REST를 한 번도 거치지 않은 새 사용자) 상태로 거부하지 않고
+     * 평소대로 grant를 본다 — 어차피 grant가 없어 거부되고, 여기서 막으면 미러링 순서에 따라
+     * 기존 사용자가 무작위로 차단된다.
+     */
     @Override
     public void checkPermission(CheckPermissionRequest req, StreamObserver<CheckPermissionResponse> out) {
         ResourceKind kind = toKind(req.getResourceType());
@@ -200,12 +211,36 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
                     .withDescription("resource_type/action은 UNSPECIFIED일 수 없습니다").asRuntimeException());
             return;
         }
+        MemberStatus status = statusOf(req.getUserId());
+        if (status != null && status != MemberStatus.ACTIVE) {
+            // 정상적으로 판정한 거부다 — 오류 상태(UNAVAILABLE 등)로 올리지 않는다.
+            // 소비자가 "org가 죽었다"와 "이 사람이 막혔다"를 구분할 수 있어야 한다.
+            out.onNext(CheckPermissionResponse.newBuilder()
+                    .setAllowed(false)
+                    .setEffectiveRole(Role.ROLE_UNSPECIFIED)
+                    .setDeniedReason(status.name())
+                    .build());
+            out.onCompleted();
+            return;
+        }
         PermissionFacade.Decision d = permissions.check(req.getUserId(), kind, req.getResourceId(), action);
         out.onNext(CheckPermissionResponse.newBuilder()
                 .setAllowed(d.allowed())
                 .setEffectiveRole(toProtoRole(d.effectiveRole()))
+                .setDeniedReason(deniedReason(d))
                 .build());
         out.onCompleted();
+    }
+
+    /**
+     * 거부 사유(0.16.0). 허용이면 빈 문자열.
+     *
+     * grant가 아예 없는 것과 역할이 모자란 것을 나눈다 — 화면이 사용자에게 해야 할 말이 다르다
+     * ("권한을 요청하세요" vs "편집 권한이 필요합니다").
+     */
+    private static String deniedReason(PermissionFacade.Decision d) {
+        if (d.allowed()) return "";
+        return d.effectiveRole() == null ? "NO_GRANT" : "INSUFFICIENT_ROLE";
     }
 
     @Override
@@ -264,6 +299,42 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
         }
         grants.deleteAll(targets);
         out.onNext(RevokeGrantResponse.newBuilder().setRevoked(targets.size()).build());
+        out.onCompleted();
+    }
+
+    /** 행이 없으면 null — 상태로 막지 않고 평소의 grant 판정에 맡긴다(위 주석 참고). */
+    private MemberStatus statusOf(long userId) {
+        return members.findById(userId).map(Member::getStatus).orElse(null);
+    }
+
+    /**
+     * id로 사람을 읽는다(0.16.0). {@link #lookupMembers}와 방향이 반대다 — 여기는 id를 아는 쪽이
+     * 이름·이메일을 묻는다(ALM 알림이 담당자 주소를 얻는 창구).
+     *
+     * <p>LookupMembers와 달리 <b>활성 여부로 거르지 않는다.</b> 퇴사자에게 알림을 보내지 않는 것과
+     * 퇴사자 이름을 화면에 못 그리는 것은 다른 문제라, 상태를 실어 주고 판단은 호출측에 맡긴다.
+     * 없는 id는 응답에서 빠진다.
+     */
+    @Override
+    public void getMembers(GetMembersRequest req, StreamObserver<GetMembersResponse> out) {
+        if (req.getIdsCount() > LOOKUP_LIMIT) {
+            out.onError(Status.INVALID_ARGUMENT
+                    .withDescription("한 번에 조회할 수 있는 항목은 " + LOOKUP_LIMIT + "개까지입니다")
+                    .asRuntimeException());
+            return;
+        }
+        List<Long> ids = req.getIdsList().stream().distinct().toList();
+        GetMembersResponse.Builder response = GetMembersResponse.newBuilder();
+        if (!ids.isEmpty()) {
+            members.findAllById(ids).forEach(m -> response.addMembers(MemberInfo.newBuilder()
+                    .setId(m.getId())
+                    .setDisplayName(m.getDisplayName() == null ? "" : m.getDisplayName())
+                    .setEmail(m.getEmail() == null ? "" : m.getEmail())
+                    .setStatus(m.getStatus().name())
+                    .setKind(m.getKind().name())
+                    .build()));
+        }
+        out.onNext(response.build());
         out.onCompleted();
     }
 

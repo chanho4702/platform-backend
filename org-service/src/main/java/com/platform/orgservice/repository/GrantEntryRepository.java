@@ -51,6 +51,20 @@ public interface GrantEntryRepository extends JpaRepository<GrantEntry, Long> {
 
     List<GrantEntry> findByResourceTypeAndResourceId(ResourceKind resourceType, String resourceId);
 
+    List<GrantEntry> findBySubjectTypeAndSubjectId(SubjectType subjectType, Long subjectId);
+
+    /**
+     * 전역 관리자 수(USER 직접 grant 기준). 팀 경유는 세지 않는다 — 팀에서 사람이 빠지면
+     * 관리자가 조용히 0이 될 수 있어 "마지막 한 명" 보호의 근거가 되지 못한다.
+     */
+    @Query("""
+            select count(g) from GrantEntry g
+             where g.subjectType = com.platform.orgservice.domain.SubjectType.USER
+               and g.resourceType = com.platform.orgservice.domain.ResourceKind.GLOBAL
+               and g.role = com.platform.orgservice.domain.GrantRole.ADMIN
+            """)
+    long countGlobalAdminUsers();
+
     Optional<GrantEntry> findBySubjectTypeAndSubjectIdAndResourceTypeAndResourceId(
             SubjectType subjectType, Long subjectId, ResourceKind resourceType, String resourceId);
 }

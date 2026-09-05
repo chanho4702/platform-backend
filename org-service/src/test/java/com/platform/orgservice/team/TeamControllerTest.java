@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static com.platform.orgservice.TestAuth.active;
 import static com.platform.orgservice.TestAuth.asUser;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -43,6 +44,9 @@ class TeamControllerTest {
         grants.deleteAll();
         members.deleteAll();
         grants.save(GrantEntry.globalAdmin(ADMIN_ID));
+        // U1부터 처음 보는 사용자는 PENDING으로 격리된다 — 팀 화면 테스트는 활성 사용자로 시작한다
+        active(members, ADMIN_ID, "Admin");
+        active(members, USER_ID, "Bob");
     }
 
     @Test
@@ -161,6 +165,9 @@ class TeamControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].memberId").value(ADMIN_ID))
+                .andExpect(jsonPath("$[0].displayName").value("Admin"))
+                // 동명이인을 가르는 유일한 단서 — 리더 지정·제외 화면이 사람을 지목한다
+                .andExpect(jsonPath("$[0].email").value("admin@test.com"))
                 .andExpect(jsonPath("$[0].role").value("MEMBER"));
     }
 }

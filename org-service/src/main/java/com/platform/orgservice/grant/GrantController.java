@@ -4,6 +4,7 @@ import com.platform.orgservice.domain.ResourceKind;
 import com.platform.orgservice.grant.dto.GrantAuditResponse;
 import com.platform.orgservice.grant.dto.GrantCreateRequest;
 import com.platform.orgservice.grant.dto.GrantDetailResponse;
+import com.platform.orgservice.grant.dto.GrantRoleRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -43,6 +44,13 @@ public class GrantController {
     @ResponseStatus(HttpStatus.CREATED)
     public GrantDetailResponse create(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody GrantCreateRequest req) {
         return grants.create(userId(jwt), req);
+    }
+
+    /** 역할 변경. 마지막 전역 관리자의 강등은 409로 막힌다. */
+    @PatchMapping("/{id}")
+    public GrantDetailResponse changeRole(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
+                                          @Valid @RequestBody GrantRoleRequest req) {
+        return grants.changeRole(userId(jwt), id, req.role());
     }
 
     @DeleteMapping("/{id}")

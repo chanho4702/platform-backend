@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static com.platform.orgservice.TestAuth.active;
 import static com.platform.orgservice.TestAuth.asAdmin;
 import static com.platform.orgservice.TestAuth.asUser;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +37,9 @@ class AgentMemberControllerTest {
     void setup() {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         members.deleteAll();
+        // U1부터 처음 보는 사용자는 PENDING으로 격리된다 — 등록 호출자는 활성 사용자여야 한다
+        active(members, ADMIN_ID, "Admin");
+        active(members, 800L, "Bob");
     }
 
     /** POST /api/org/members/agents {"id":9001,"displayName":"지호"} ADMIN → 200 kind=AGENT, 반복 호출도 idempotent. */
@@ -84,13 +88,18 @@ class AgentMemberControllerTest {
         assertThat(reloaded.getEmail()).isEqualTo("persona@agents.local");
     }
 
-    /** GET /api/org/members → 각 항목에 kind. */
+    /**
+     * GET /api/org/members → 각 항목에 kind.
+     *
+     * 기본 필터가 ACTIVE·HUMAN이라 에이전트를 함께 보려면 kind=ALL을 명시한다 —
+     * 사람 고르는 화면에 페르소나가 섞이지 않게 한 것이 기본값의 취지다.
+     */
     @Test
     void member_list_includes_kind() throws Exception {
         members.save(Member.of(700L, "사람", "human@test.com"));
         members.save(Member.agentOf(AGENT_ID, "에이전트", "agent@test.com"));
 
-        String body = mvc.perform(get("/api/org/members").with(asUser(700L, "사람")))
+        String body = mvc.perform(get("/api/org/members?kind=ALL").with(asUser(700L, "사람")))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 

@@ -73,10 +73,111 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 - **`LookupMembers(emails, usernames)` → `MemberMatch[]`** — 이메일(또는 `username` = 이메일 local-part)로 우리 계정을 찾는다. 컨플루언스 이관이 원본 작성자·제한 주체를 짝지을 때 쓴다.
 - **`LookupTeams(names)` → `TeamMatch[]`** — 원본 그룹 이름으로 우리 팀을 찾는다.
 
+**`GetMembers(ids)` → `MemberInfo[]`**(0.16.0)는 방향이 반대다 — id를 아는 쪽이 이름·이메일·상태·종류를
+묻는다(ALM 알림이 담당자 주소를 얻는 창구). `LookupMembers`와 달리 **활성 여부로 거르지 않는다**:
+퇴사자에게 알림을 안 보내는 것과 퇴사자 이름을 화면에 못 그리는 것은 다른 문제라, `status`를 실어 주고
+판단은 호출측에 맡긴다. 없는 id는 응답에서 빠지고, 상한은 200이다.
+
 둘 다 trim + 대소문자 무시로 대조하고 **매칭된 것만** 돌려준다(못 찾은 질의는 응답에서 빠진다 — 호출측이 fail-closed로 닫는다). 활성 멤버만 보고, 한 질의에 후보가 둘 이상이면 매칭으로 세지 않는다 — `member.email`에 UNIQUE가 없어 누구인지 모르는 채로 하나를 고르면 남의 이름으로 문서가 쓰인다. 한 요청의 항목 상한은 200이고 넘으면 `INVALID_ARGUMENT`다.
 
 > ⚠️ **기본값이 실행 방식에 따라 다르다.** `application.yml`은 `${PLATFORM_BOOTSTRAP_ADMIN_ID:}` — 즉 **코드 기본값은 빈 값이고, 비어 있으면 `BootstrapAdminSeeder`가 시딩을 건너뛴다.** `gradlew :org-service:bootRun`으로 직접 띄우면 아무도 자동으로 관리자가 되지 않는다.
 > 반면 **compose는 `${PLATFORM_BOOTSTRAP_ADMIN_ID:-1}`로 1을 주입**하므로 컨테이너 스택에서는 사용자 1이 재기동마다 GLOBAL ADMIN으로 복구된다. 운영 배포 전 `.env`에 실제 관리자 id를 명시하거나 빈 값으로 두어 비활성화할 것.
+
+### 사용자 초대 · 상태 · 팀 권한 (V4~V6, U1)
+
+**초대 없는 가입은 차단된다.** 로그인 전에는 그 사람의 id가 없어 팀·권한을 미리 줄 수 없으므로 초대의 키는
+**이메일**이고, 토큰은 링크 검증·`login_hint`·수락 추적용이다. 처음 로그인한 사람은 `MemberMirrorFilter`가
+`PENDING`으로 만들고, 이메일이 일치하는 살아 있는 초대가 있으면 그 자리에서 소진해 활성 사용자로 만든다.
+초대가 없으면 `GET /api/org/me`와 그 하위 말고는 전부 `403 {"error":"승인 대기 중인 계정입니다"}`다.
+
+> **토큰 원문은 저장하지 않는다(sha256만).** 그래서 `inviteUrl`은 **생성·재발송 응답에만** 담기고 목록에서는
+> 항상 `null`이다. 링크가 다시 필요하면 `POST /invitations/{id}/resend`(새 토큰, 이전 링크는 그 순간 죽음)를
+> 쓴다. `?mail=false`면 메일 없이 링크만 다시 받는다.
+
+**이메일 대조만으로 소진되는 로그인 경로는 제한된다.** Keycloak 이메일 검증(`verifyEmail`)이 꺼져 있는 동안
+비밀번호 가입자가 남의 이메일을 적어 남의 초대를 가로챌 수 있기 때문이다. 기본값은 구글뿐이고
+(`ORG_INVITATION_EMAIL_MATCH_PROVIDERS=GOOGLE`, JWT `provider` 클레임으로 판정), 나머지는 초대 링크를
+타야 한다(auth-server `/invite/{token}` → 내부 `accept`).
+
+**상태 판정은 org 하나로 통일된다.** gRPC `CheckPermission`은 `ACTIVE`가 아닌 멤버를 grant를 보기 전에
+거부한다(fail-closed) — 정지·퇴사자가 권한을 그대로 들고 있어도 wiki·alm이 문서를 열어 주지 않는다.
+member 행이 아예 없으면 상태로 막지 않고 평소의 grant 판정에 맡긴다(그러지 않으면 미러링 순서에 따라
+기존 사용자가 무작위로 차단된다).
+
+> **이 거부는 정상 응답이지 오류가 아니다.** `UNAVAILABLE` 같은 상태 코드로 올리지 않는다 — 소비자가
+> "org가 죽었다"와 "이 사람이 막혔다"를 구분할 수 있어야 한다. 대신 `CheckPermissionResponse.denied_reason`
+> (0.16.0)이 이유를 문자열로 싣는다: `PENDING`·`SUSPENDED`·`DEACTIVATED`(상태) / `NO_GRANT`·`INSUFFICIENT_ROLE`(권한),
+> 허용이면 빈 문자열. 값은 앞으로 늘 수 있으니 모르는 값은 일반 거부로 다룬다.
+
+**"전체 구성원" 팀**(`team.kind='EVERYONE'`)에는 활성 사람 멤버 전원이 자동으로 속한다. 수동 추가·제거·삭제·
+이름 변경은 `400`이다. 스페이스·프로젝트 ADMIN이 이 팀에 VIEWER를 주면 그것이 곧 "공개"다.
+
+| 메서드 | 경로 | 인가 | 요청 → 응답 |
+|---|---|---|---|
+| `GET` | `/me` | 인증(PENDING 포함) | → `{id, displayName, email, avatarUrl, avatarUpdatedAt, status, kind, joinedVia, globalRoles[], teams[{id,name,kind,role}]}` |
+| `GET` | `/members` | 인증 | **배열**(기존 계약 유지). `status`·`kind`·`q`(이름·이메일 부분일치) 선택, 기본 `status=ACTIVE&kind=HUMAN`. 전부는 `status=ALL&kind=ALL` |
+| `GET` | `/members/page` | 인증 | 같은 필터 + `page`·`size` → `{items[], page, size, total}` |
+| `GET` | `/members/pending` | GLOBAL ADMIN | 승인 대기 목록 |
+| `GET` | `/members/{id}` | 인증 | 상세 + `teams[]`, `grants[]`는 본인·GLOBAL ADMIN에게만(아니면 필드 없음) |
+| `PATCH` | `/members/{id}` | GLOBAL ADMIN | `{status}` → 상세. **표시 이름은 못 바꾼다** — `MemberMirrorFilter`가 요청마다 JWT `name`으로 덮어쓴다(원천은 Keycloak) |
+| `POST` | `/members/{id}/approve` | GLOBAL ADMIN | `{teams?[{teamId,role}], grants?[{scope,resourceId,role}]}` → 상세(ACTIVE·`joinedVia=APPROVAL`·전체 구성원 합류) |
+| `GET` | `/members/{id}/events` | GLOBAL ADMIN | 초대·상태 이력 |
+| `POST` | `/invitations` | §초대 권한 | `{emails[], teams?[{teamId,role}], grants?[{scope,resourceId,role}], message?}` → `201` 초대 배열(각 `inviteUrl`·`mailSent`) |
+| `GET` | `/invitations` | GLOBAL ADMIN(리소스 ADMIN은 자기가 보낸 것만) | `status`·`q`·`page`·`size` → `{items[], page, size, total}`, `inviteUrl`은 항상 `null` |
+| `POST` | `/invitations/{id}/resend` | 동일 | `?mail=true|false` → 새 토큰·새 만료 + `inviteUrl` |
+| `DELETE` | `/invitations/{id}` | 동일 | PENDING → REVOKED, `204` |
+| `GET` | `/invitations/{id}/events` | GLOBAL ADMIN | 초대 이력 |
+| `GET` | `/grants?resourceType=&resourceId=` | 리소스 ADMIN / GLOBAL ADMIN | 항목에 `id`(PATCH·DELETE 대상)와 `subjectName`(USER면 표시 이름, TEAM이면 팀 이름, 못 찾으면 `사용자 #id`) |
+| `PATCH` | `/grants/{id}` | 리소스 ADMIN / GLOBAL ADMIN | `{role}` → 제자리 갱신(`grant_audit`에 `GRANT_CHANGED`) |
+| `GET` | `/teams` | 인증 | `q` 선택. 항목에 `kind`·`memberCount`·`myRole` 추가(기존 필드 불변) |
+| `GET` | `/teams/{id}/members` | 인증 | `[{memberId, displayName, email, role}]` — `email`은 동명이인을 가르는 단서 |
+| `PUT`/`DELETE` | `/teams/{id}/members/{memberId}` | GLOBAL ADMIN **또는 그 팀 LEAD** | 팀원 추가·제거 |
+| `PATCH` | `/teams/{id}/members/{memberId}` | 동일 | `{role: LEAD|MEMBER}` |
+
+> **요청 키가 두 가지인 이유.** grant 생성(`POST /grants`)은 기존대로 `resourceType`을 받고, 초대·승인의
+> 권한 **프리셋**은 `scope`를 받는다. 프리셋은 "지금 만들 grant"가 아니라 "수락하면 만들 조건"이라
+> 같은 이름을 쓰면 두 요청이 같은 것으로 읽힌다. 프론트가 이 구분에 맞춰져 있다.
+
+**초대 권한.** GLOBAL ADMIN은 무제한. 리소스(SPACE/PROJECT) ADMIN도 초대할 수 있지만
+(`ORG_INVITATION_RESOURCE_ADMIN=false`로 끈다) 권한 프리셋은 **자기가 ADMIN인 리소스**로만, 팀 프리셋은
+**자기가 LEAD인 팀**으로만, 전역 역할 프리셋은 GLOBAL ADMIN만이다. 아무 리소스의 ADMIN도 아니면
+`403 {"error":"초대 권한이 없습니다"}`.
+
+**마지막 전역 관리자 보호.** `PATCH /grants/{id}` 강등, `DELETE /grants/{id}`, `PATCH /members/{id}`의
+SUSPENDED·DEACTIVATED는 그 사람이 마지막 GLOBAL ADMIN이면 `409 {"error":"마지막 전역 관리자는 내릴 수 없습니다"}`다.
+세는 기준은 **USER 직접 grant**뿐이다 — 팀 경유 관리자는 그 팀에서 사람이 빠지면 조용히 0이 되므로
+"아직 한 명 남아 있다"의 근거가 되지 못한다. 자기 계정 비활성화도 `409`다.
+
+**상태 전이.** `ACTIVE ↔ SUSPENDED`, `ACTIVE|SUSPENDED → DEACTIVATED`. `DEACTIVATED → ACTIVE`는 막혀 있고
+(`409 비활성된 계정은 재초대로만 되돌릴 수 있습니다`) 재초대가 유일한 복귀 경로다 — 그때 Keycloak 계정을 다시 연다.
+`DEACTIVATED`는 Keycloak 계정을 `enabled=false`로 잠그고, 실패해도 우리 상태는 바뀌며
+`member_event(KEYCLOAK_DISABLED_FAILED)`에 남는다(관리자가 퇴사 처리를 못 하는 편이 더 나쁘다).
+
+**서비스 간 전용 경로** — 게이트웨이가 라우팅하지 않는다. 인증은 `X-Internal-Token` 헤더 하나뿐이고,
+`ORG_INTERNAL_TOKEN`이 비어 있으면 헤더와 무관하게 전부 `403`이다(fail-closed).
+
+| 메서드 | 경로 | 요청 → 응답 |
+|---|---|---|
+| `GET` | `/internal/org/invitations/by-token/{token}` | → `{email, status, expiresAt}`, 무효면 `404 {"error":"유효하지 않은 초대입니다"}` |
+| `POST` | `/internal/org/invitations/accept` | `{token, memberId, email, displayName?}` → `{accepted, status, invitationId}` (이메일 불일치면 `accepted:false, status:"EMAIL_MISMATCH"`) |
+
+| 변수 | 기본값 | 용도 |
+|---|---|---|
+| `ORG_INTERNAL_TOKEN` | (빈 값) | `/internal/org/**` 게이트. 비면 내부 API 전체 차단 |
+| `ORG_INVITATION_TTL` | `P7D` | 초대 유효기간(ISO-8601) |
+| `ORG_INVITATION_BASE_URL` (= `PLATFORM_ORG_INVITATION_BASE_URL`) | (빈 값) | 초대 링크 호스트. 경로는 auth-server `/invite/{token}`. 비면 상대 경로. 완화 바인딩 이름이 우선한다(compose가 쓰는 쪽) |
+| `ORG_INVITATION_EMAIL_MATCH_PROVIDERS` | `GOOGLE` | 토큰 없이 이메일 대조만으로 소진 가능한 로그인 경로(콤마 구분) |
+| `ORG_INVITATION_RESOURCE_ADMIN` | `true` | 리소스 ADMIN의 초대 허용 |
+| `ORG_INVITATION_EXPIRY_CRON` | `0 */10 * * * *` | 만료 배치 |
+| `PLATFORM_MAIL_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_FROM` | (빈 값) / `587` | 초대 메일. `HOST`가 비면 보내지 않고 `mailSent:false` |
+| `KEYCLOAK_ISSUER_URI` | (빈 값) | Keycloak realm 주소(`.../realms/{realm}`) |
+| `KC_ADMIN_CLIENT_ID` / `KC_ADMIN_CLIENT_SECRET` | `platform-admin` / (빈 값) | 계정 비활성/활성용 service account. 시크릿이 비면 no-op |
+
+> ⚠️ **인프라 후속(U4).** realm에 `platform-admin`(confidential, service account, `realm-management: manage-users, view-users`)
+> 클라이언트를 추가하고 compose에 위 env를 주입해야 계정 잠금이 실제로 동작한다. 그전까지는 no-op으로 흘러가고
+> `member_event`에만 흔적이 남는다. 게이트웨이는 `/internal/**`을 라우팅하지 않아야 한다.
+
+---
 
 ### 아바타 · 멤버 프로필 (V7)
 
@@ -92,8 +193,8 @@ alm-backend `user_preference.avatar_key`에서 이관, ALM 쪽은 V21에서 제�
 | `PUT` | `/api/org/me/avatar` (multipart `file`) | 인증(본인) | `200 { memberId, avatarUrl, updatedAt }` |
 | `DELETE` | `/api/org/me/avatar` | 인증(본인) | `204` |
 | `GET` | `/api/org/members/{memberId}/avatar` | 인증 | 바이트(원본 타입, `private, max-age=300`, `nosniff`), 없으면 `404` |
-| `GET` | `/api/org/me` | 인증(본인) | `{ id, displayName, email, avatarUrl, avatarUpdatedAt }` |
-| `GET` | `/api/org/members` | 인증 | 기존 항목에 `avatarUrl`·`avatarUpdatedAt`(둘 다 nullable) 추가 — 기존 필드 불변 |
+| `GET` | `/api/org/me` | 인증(본인) | `{ id, displayName, email, avatarUrl, avatarUpdatedAt, … }` — U1에서 `status`·`kind`·`joinedVia`·`globalRoles`·`teams`가 더 붙었다(위 절) |
+| `GET` | `/api/org/members` | 인증 | 기존 항목에 `avatarUrl`·`avatarUpdatedAt`(둘 다 nullable) 추가 — 기존 필드 불변. 배열 그대로이고, 기본 필터만 `ACTIVE`·`HUMAN`으로 좁아졌다(위 절) |
 
 `avatarUrl`은 `/api/org/members/{id}/avatar?v={epochMillis}`이고 `?v=`는 `avatar_updated_at`의
 epoch millis다. 프로필 전체의 `updated_at`과 분리해 두어 아바타와 무관한 갱신이 이미지 URL을 흔들지 않는다.
