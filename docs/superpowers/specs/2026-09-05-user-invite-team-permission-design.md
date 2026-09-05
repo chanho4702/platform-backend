@@ -80,9 +80,10 @@ V6 team: kind VARCHAR(16) NOT NULL DEFAULT 'STANDARD' ('STANDARD','EVERYONE'); "
 | 메서드 | 경로 | 요청 → 응답 | 권한 |
 |---|---|---|---|
 | GET | `/me` (확장) | → `{id, displayName, email, status, kind, globalRoles: ["ADMIN"|...], teams:[{id,name,role}], joinedVia}` | 본인(PENDING 포함) |
-| GET | `/members?status=&kind=&q=&page=&size=` | 기본 `status=ACTIVE&kind=HUMAN`, `q`는 이름·이메일 부분일치 → `{items[{id,displayName,email,status,kind,joinedVia,createdAt}], page, size, total}` | 인증 |
+| GET | `/members?status=&kind=&q=` | **배열 유지**(하위 호환 — alm 13·wiki 10화면이 배열을 받는다). 기본 `status=ACTIVE&kind=HUMAN`(전체는 `ALL`), `q`는 이름·이메일 부분일치 | 인증 |
+| GET | `/members/page?status=&kind=&q=&page=&size=` | 페이지네이션 전용 → `{items[{id,displayName,email,status,kind,joinedVia,createdAt}], page, size, total}` | 인증 |
 | GET | `/members/{id}` | → 상세 + `teams[]` + `grants[]`(GLOBAL ADMIN 또는 본인) | 인증 |
-| PATCH | `/members/{id}` | `{status?: SUSPENDED|ACTIVE|DEACTIVATED, displayName?}` | GLOBAL ADMIN(본인 DEACTIVATED 금지) |
+| PATCH | `/members/{id}` | `{status: SUSPENDED|ACTIVE|DEACTIVATED}` — 표시명 편집은 없다(MemberMirrorFilter가 매 요청 JWT name으로 덮어쓴다; 수동 우선 표시명은 후속) | GLOBAL ADMIN(본인 DEACTIVATED 금지) |
 | POST | `/members/{id}/approve` | PENDING→ACTIVE(+EVERYONE, 선택 `{teamIds[], grants[]}`) | GLOBAL ADMIN |
 | GET | `/members/pending` | 승인 대기 목록 | GLOBAL ADMIN |
 | POST | `/invitations` | `{emails[], teams:[{teamId, role}], grants:[{scope,resourceId,role}], message?}` → 생성된 초대 목록(각 `inviteUrl` — 메일 미설정 시 화면에서 복사, `mailSent: bool`) | §3.2 초대 권한 |
@@ -96,6 +97,7 @@ V6 team: kind VARCHAR(16) NOT NULL DEFAULT 'STANDARD' ('STANDARD','EVERYONE'); "
 | POST/DELETE | `/teams/{id}/members` (확장) | LEAD도 허용(자기 팀), EVERYONE은 400 | GLOBAL ADMIN 또는 해당 팀 LEAD |
 | PATCH | `/teams/{id}/members/{memberId}` | `{role: LEAD|MEMBER}` | 동일 |
 | GET | `/members/{id}/events`, `/invitations/{id}/events` | 이력 | GLOBAL ADMIN |
+**common-proto 0.16.0(추가만)**: `GetMembers(ids[]) → MemberInfo{id, display_name, email, status, kind}`(id→email 방향, ALM 알림용), `CheckPermissionResponse.denied_reason`(PENDING/SUSPENDED/DEACTIVATED/NO_GRANT, 허용이면 빈 문자열). 상태 fail-closed는 "거부" 응답이지 gRPC 오류가 아니다 — 소비자는 장애(UNAVAILABLE)를 권한 없음으로 오인하지 않고 503으로 낸다.
 내부용 두 개는 게이트웨이 노출 금지(경로 `/internal/org/**`로 두고 서비스 간 헤더 `X-Internal-Token`(env) 검사 — gRPC 채널이 무인증인 현 전제와 같은 수준).
 
 ### 3.4 메일·Keycloak
@@ -117,7 +119,7 @@ V6 team: kind VARCHAR(16) NOT NULL DEFAULT 'STANDARD' ('STANDARD','EVERYONE'); "
 - 공통: `getByRole` 테스트(vitest + testing-library), 한국어 문구, 토큰 없음. 빈·로딩·에러 상태. 리소스 권한 프리셋의 리소스 이름은 호스트가 `resolveResource(scope, id)`로 준다(패키지는 위키·ALM을 모른다).
 - **승인 대기 화면**(`PendingApprovalGate`): 호스트가 `/api/org/me.status==='PENDING'`이면 셸 대신 이 컴포넌트를 그린다.
 - 발행: `packages/org-admin` → `@chanho4702/org-admin`(publish.yml에 세 번째 패키지 추가), 소비는 `npm:` alias `@chanho/org-admin`.
-- 마운트: wiki-front `/admin/org/*`(기존 `/admin/teams`는 여기로 리다이렉트), alm-front `/admin/org/*`(ALM 세션).
+- 마운트: `basePath`는 임의 — wiki-front `/admin/org/*`(기존 `/admin/teams`는 여기로 리다이렉트), alm-front는 설정 셸 아래 `/settings/org/*`(ALM 세션).
 
 ## 6. wiki-front 소비(이 세션)
 - `/admin/org/*` 마운트, ⚙ 메뉴에 "사용자·팀", `AuthGate` 뒤에 `PendingApprovalGate`. 전역 관리자 판정을 `/api/org/me.globalRoles`로 통일(기존 "관리자 엔드포인트 찔러보기" 제거).
