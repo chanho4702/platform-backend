@@ -227,6 +227,25 @@ dev 오프셋 클러스터는 MinIO 없이 뜬다). 다시 올리면 이전 오�
 > alm-backend `attachment/AttachmentStorage`의 최소 복제다. 쓰는 곳이 둘뿐이라 common-starter로
 > 끌어올리지 않았다(AWS SDK 의존이 리소스 서버 다섯 곳 전부에 붙는다). 세 번째 소비자가 생기면 그때 옮긴다.
 
+### OpenAPI (`GET /v3/api-docs`)
+
+org-service의 REST 계약을 코드에서 뽑아 OpenAPI 3.1 JSON으로 낸다. springdoc `3.0.3`(Boot 4.0.x 라인 — 3.1.x는 Boot 4.1용이다), **UI 없음**. 공개 문서는 myFront `scripts/api/`가 이 JSON을 받아 `/docs/`의 "API 레퍼런스" 페이지로 생성한다.
+
+| | |
+|---|---|
+| 경로 | `GET /v3/api-docs` — `SecurityFilterChain`에서 permitAll(토큰 불필요) |
+| 노출 범위 | 게이트웨이·nginx가 `/v3`를 라우팅하지 않는다 → **클러스터 내부 전용** |
+| 담기는 것 | `/api/org/**` 31개 오퍼레이션, 태그 6개(Members · Teams · Grants · Invitations · Me · Avatars) |
+| 안 담기는 것 | `/internal/org/**`(`springdoc.paths-to-match` + `@Hidden`), 액추에이터, gRPC `PermissionService`(REST가 아니다) |
+
+주석 규약: 컨트롤러에 `@Tag`, 엔드포인트마다 `@Operation(summary)`, 뜻이 안 드러나는 파라미터에 `@Parameter`, DTO 핵심 필드에 `@Schema(description, example)` — 전부 한국어 한 줄.
+
+공통 오류는 `config/OpenApiConfig`의 `OperationCustomizer`가 붙인다: 401·403은 모든 오퍼레이션에, 404는 경로 변수를 받는 오퍼레이션에, 400은 본문을 받는 오퍼레이션에. 사유가 제각각인 409만 `@ConflictResponse("사유")`를 붙인 곳에 그 사유로 들어간다. 응답 스키마는 common-starter의 `{"error": 메시지}` 계약(`PlatformError`)이다.
+
+`springdoc.override-with-generic-response: false`인 이유: 켜 두면 `@RestControllerAdvice`가 다루는 예외가 전부 모든 오퍼레이션의 응답으로 복사돼, 목록 조회에도 404·409·503이 붙는다. 그러면 "이 엔드포인트가 실제로 내는 코드"라는 뜻이 사라진다.
+
+`OpenApiDocsTest`가 게이트다 — 스펙이 200인지, 태그·요약 없는 오퍼레이션이 0개인지, 성공 응답이 빠진 곳이 없는지, 내부 경로가 새지 않는지, `bearerAuth`가 전역인지를 검증한다.
+
 ---
 
 ## search-service

@@ -26,6 +26,18 @@ spring:
         jwt:
           jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/.well-known/jwks.json}
 
+# OpenAPI 스펙(JSON) — UI 없음. /internal/org/**·액추에이터가 문서에 새지 않도록 공개 API 경로만 담는다.
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: false
+  paths-to-match: /api/org/**
+  # @RestControllerAdvice가 다루는 예외를 전부 모든 오퍼레이션의 응답으로 베끼지 않는다 —
+  # 그러면 목록 조회에도 404·409·503이 붙어 "이 엔드포인트가 실제로 내는 코드"라는 뜻이 사라진다.
+  # 공통 오류는 OpenApiConfig의 OperationCustomizer가 붙이고, 사유가 제각각인 409는 @ConflictResponse를 붙인 곳에만 들어간다.
+  override-with-generic-response: false
+
 eureka:
   client:
     service-url:

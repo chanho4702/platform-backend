@@ -59,8 +59,12 @@ public class SecurityConfig {
         http
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.disable())
-                // 관리 도메인 — 공개 엔드포인트 없음. 세부 인가(GLOBAL ADMIN)는 PermissionFacade가 판정.
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                // OpenAPI 스펙(JSON)만 공개. 게이트웨이·nginx가 /v3를 라우팅하지 않아 클러스터 내부 전용이고,
+                // 문서 생성기(myFront)가 토큰 없이 받아 간다. UI는 없다.
+                // 그 밖은 관리 도메인 — 공개 엔드포인트 없음. 세부 인가(GLOBAL ADMIN)는 PermissionFacade가 판정.
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()
+                        .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
                 .addFilterAfter(memberMirrorFilter, AuthorizationFilter.class);
         return http.build();

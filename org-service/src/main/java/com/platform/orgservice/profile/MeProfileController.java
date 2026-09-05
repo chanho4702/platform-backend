@@ -10,6 +10,8 @@ import com.platform.orgservice.profile.dto.MeResponse;
 import com.platform.orgservice.repository.MemberRepository;
 import com.platform.orgservice.repository.TeamMemberRepository;
 import com.platform.orgservice.repository.TeamRepository;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -28,6 +30,7 @@ import java.util.Map;
  * <p>멤버 행은 MemberMirrorFilter가 인증 직후 JIT로 만들어 두므로 여기서는 이미 존재한다.
  * 이 경로만은 승인 대기·정지 계정도 지나간다 — 자기 상태를 못 읽으면 안내 화면조차 그릴 수 없다.
  */
+@Tag(name = "Me", description = "내 정보 — 프로필·소속 팀·권한. 승인 대기 계정도 이 경로만은 읽을 수 있다.")
 @RestController
 @RequiredArgsConstructor
 public class MeProfileController {
@@ -38,6 +41,7 @@ public class MeProfileController {
     private final TeamRepository teams;
     private final PermissionFacade permissions;
 
+    @Operation(summary = "내 프로필 조회 — 이름·아바타·상태·전역 역할·소속 팀")
     @GetMapping("/api/org/me")
     public MeResponse me(@AuthenticationPrincipal Jwt jwt) {
         long memberId = AvatarController.memberId(jwt);
