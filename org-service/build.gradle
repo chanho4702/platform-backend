@@ -29,6 +29,9 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
     implementation "io.grpc:grpc-netty-shaded:${grpcVersion}"
     implementation "io.grpc:grpc-services:${grpcVersion}"   // 리플렉션(grpcurl 디버깅용)
+    // 아바타 바이트 저장소(MinIO/S3 호환). 기본은 로컬 파일이라 dev에서는 쓰이지 않는다
+    implementation platform('software.amazon.awssdk:bom:2.49.6')
+    implementation 'software.amazon.awssdk:s3'
     runtimeOnly 'org.postgresql:postgresql'
     compileOnly 'org.projectlombok:lombok:1.18.46'
     annotationProcessor 'org.projectlombok:lombok:1.18.46'

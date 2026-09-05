@@ -26,3 +26,8 @@ platform:
   grpc:
     enabled: false   # 단위 테스트에서 실포트 열지 않음 — gRPC는 in-process로 검증
   bootstrap-admin-id: ""
+  org:
+    avatar:
+      files-dir: build/test-avatars
+      s3:
+        enabled: false

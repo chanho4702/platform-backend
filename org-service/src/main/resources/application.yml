@@ -14,6 +14,12 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+  servlet:
+    multipart:
+      # 아바타 상한(2MB)은 서비스가 판정해 한국어 400을 돌려준다 — 컨테이너 상한을 그보다
+      # 넉넉히 두어야 사용자가 원인 모를 오류 대신 안내 문구를 본다.
+      max-file-size: ${ORG_MAX_AVATAR_MB:4}MB
+      max-request-size: ${ORG_MAX_AVATAR_MB:4}MB
   security:
     oauth2:
       resourceserver:
@@ -37,6 +43,18 @@ platform:
     enabled: true
   # 최초 GLOBAL ADMIN 부트스트랩 — auth-server user id. 빈 값이면 시드 생략.
   bootstrap-admin-id: ${PLATFORM_BOOTSTRAP_ADMIN_ID:}
+  org:
+    avatar:
+      # 기본은 로컬 파일 — dev 오프셋 클러스터는 MinIO 없이 뜬다. 운영 compose가 s3.enabled를 켠다.
+      files-dir: ${ORG_FILES_DIR:./data/avatars}
+      s3:
+        enabled: ${ORG_S3_ENABLED:false}
+        bucket: ${ORG_S3_BUCKET:member-avatars}
+        region: ${ORG_S3_REGION:us-east-1}
+        endpoint: ${ORG_S3_ENDPOINT:}
+        path-style-access: ${ORG_S3_PATH_STYLE_ACCESS:true}
+        access-key: ${ORG_S3_ACCESS_KEY:}
+        secret-key: ${ORG_S3_SECRET_KEY:}
 
 ---
 # 배포판(compose): Eureka 미등록 — 게이트웨이는 ORG_SERVICE_URI(DNS 직결)로 라우팅 (15번 문서 확정)

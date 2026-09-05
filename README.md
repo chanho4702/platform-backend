@@ -78,6 +78,54 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 > ⚠️ **기본값이 실행 방식에 따라 다르다.** `application.yml`은 `${PLATFORM_BOOTSTRAP_ADMIN_ID:}` — 즉 **코드 기본값은 빈 값이고, 비어 있으면 `BootstrapAdminSeeder`가 시딩을 건너뛴다.** `gradlew :org-service:bootRun`으로 직접 띄우면 아무도 자동으로 관리자가 되지 않는다.
 > 반면 **compose는 `${PLATFORM_BOOTSTRAP_ADMIN_ID:-1}`로 1을 주입**하므로 컨테이너 스택에서는 사용자 1이 재기동마다 GLOBAL ADMIN으로 복구된다. 운영 배포 전 `.env`에 실제 관리자 id를 명시하거나 빈 값으로 두어 비활성화할 것.
 
+### 아바타 · 멤버 프로필 (V7)
+
+프로필 사진은 플랫폼 공통이다 — ALM 담당자 셀, 위키 작성자, 보드 코멘트가 같은 얼굴을 본다.
+사용자 디렉터리(`GET /api/org/members`)가 여기 있으니 아바타도 여기 둔다(2026-09-05에
+alm-backend `user_preference.avatar_key`에서 이관, ALM 쪽은 V21에서 제거).
+
+`member` 테이블은 넓히지 않고 **별도 테이블 `member_profile`**(V7)에 둔다: `member`는 auth-server
+클레임의 JIT 미러라 로그인이 지나갈 때마다 갱신되는 행이고, 사용자가 올린 자산의 수명은 그것과 다르다.
+
+| 메서드 | 경로 | 인가 | 응답 |
+|---|---|---|---|
+| `PUT` | `/api/org/me/avatar` (multipart `file`) | 인증(본인) | `200 { memberId, avatarUrl, updatedAt }` |
+| `DELETE` | `/api/org/me/avatar` | 인증(본인) | `204` |
+| `GET` | `/api/org/members/{memberId}/avatar` | 인증 | 바이트(원본 타입, `private, max-age=300`, `nosniff`), 없으면 `404` |
+| `GET` | `/api/org/me` | 인증(본인) | `{ id, displayName, email, avatarUrl, avatarUpdatedAt }` |
+| `GET` | `/api/org/members` | 인증 | 기존 항목에 `avatarUrl`·`avatarUpdatedAt`(둘 다 nullable) 추가 — 기존 필드 불변 |
+
+`avatarUrl`은 `/api/org/members/{id}/avatar?v={epochMillis}`이고 `?v=`는 `avatar_updated_at`의
+epoch millis다. 프로필 전체의 `updated_at`과 분리해 두어 아바타와 무관한 갱신이 이미지 URL을 흔들지 않는다.
+
+> **`<img src>`에 그대로 넣을 수 없다.** 바이트 엔드포인트가 Bearer 인증을 요구하는데 브라우저는
+> `<img>` 요청에 Authorization 헤더를 붙이지 않아 401이 난다. 프론트는 fetch로 바이트를 받아
+> object URL을 만들어 쓴다 — `avatarUrl`은 "아바타가 있다"는 신호이자 fetch 대상 경로다.
+
+형식은 클라이언트가 보낸 `Content-Type`이 아니라 **매직 바이트**로 판별한다(PNG·JPEG·WebP만, 2MB 이하).
+SVG가 프로필 사진 이름으로 들어와 인라인 실행되면 안 되기 때문이다. 거부 문구(`{"error"}`, 400)는
+`아바타는 2MB 이하 이미지여야 합니다` · `아바타는 PNG·JPG·WebP 이미지만 올릴 수 있습니다` ·
+`빈 파일은 올릴 수 없습니다`이고, 조회 실패는 `아바타가 없습니다`(404)다.
+
+바이트는 `avatars/{memberId}/{uuid}.{ext}` 키로 S3 호환 저장소(MinIO 버킷 `member-avatars`)에 넣고,
+`platform.org.avatar.s3.enabled`가 꺼져 있으면 `ORG_FILES_DIR` 아래 로컬 파일로 떨어진다(**기본값**,
+dev 오프셋 클러스터는 MinIO 없이 뜬다). 다시 올리면 이전 오브젝트를 커밋 뒤에 지우고, 삭제 실패는
+예외가 아니라 `WARN` 로그다(키가 로그에 남으니 손으로 지운다). 저장소 장애는 `503`으로 전파한다.
+
+| 변수 | 기본값 | 용도 |
+|---|---|---|
+| `ORG_FILES_DIR` | `./data/avatars` | 로컬 파일 폴백 경로 |
+| `ORG_S3_ENABLED` | `false` | S3 호환 저장소 사용 여부 |
+| `ORG_S3_BUCKET` / `ORG_S3_REGION` | `member-avatars` / `us-east-1` | 버킷·리전 |
+| `ORG_S3_ENDPOINT` / `ORG_S3_PATH_STYLE_ACCESS` | (빈 값) / `true` | MinIO 내부 DNS endpoint |
+| `ORG_S3_ACCESS_KEY` / `ORG_S3_SECRET_KEY` | (빈 값) | 자격증명 — 둘 다 주거나 둘 다 비운다 |
+| `ORG_MAX_AVATAR_MB` | `4` | 멀티파트 컨테이너 상한. 서비스 상한(2MB)보다 넉넉해야 사용자가 한국어 400을 본다 |
+
+> **알려진 갭 / 후속**: 관리자가 남의 아바타를 올리는 경로(`PUT /api/org/members/{id}/avatar`, ADMIN 전용)는
+> 아직 없다 — AGENT 멤버의 얼굴은 지금 넣을 수 없다. 저장소 코드(`profile/AvatarStorage` 3종)는
+> alm-backend `attachment/AttachmentStorage`의 최소 복제다. 쓰는 곳이 둘뿐이라 common-starter로
+> 끌어올리지 않았다(AWS SDK 의존이 리소스 서버 다섯 곳 전부에 붙는다). 세 번째 소비자가 생기면 그때 옮긴다.
+
 ---
 
 ## search-service
