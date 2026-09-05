@@ -27,6 +27,11 @@ public class Member {
     @Column(nullable = false)
     private MemberStatus status;
 
+    /** HUMAN(기본) | AGENT — 로그인 없는 AI 에이전트 페르소나 구분(스펙 D6). */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private MemberKind kind;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -41,6 +46,18 @@ public class Member {
         m.displayName = displayName != null ? displayName : "user-" + id;
         m.email = email;
         m.status = MemberStatus.ACTIVE;
+        m.kind = MemberKind.HUMAN;
+        return m;
+    }
+
+    /** agent-service가 등록하는 에이전트 페르소나. */
+    public static Member agentOf(Long id, String displayName, String email) {
+        Member m = new Member();
+        m.id = id;
+        m.displayName = displayName != null ? displayName : "agent-" + id;
+        m.email = email;
+        m.status = MemberStatus.ACTIVE;
+        m.kind = MemberKind.AGENT;
         return m;
     }
 
@@ -48,5 +65,12 @@ public class Member {
     public void refresh(String displayName, String email) {
         if (displayName != null) this.displayName = displayName;
         if (email != null) this.email = email;
+    }
+
+    /** 에이전트 등록 재호출 — 이름/이메일 갱신 + kind=AGENT 유지(사람 mirror가 덮어써도 되돌린다는 뜻은 아님). */
+    public void refreshAsAgent(String displayName, String email) {
+        if (displayName != null) this.displayName = displayName;
+        if (email != null) this.email = email;
+        this.kind = MemberKind.AGENT;
     }
 }

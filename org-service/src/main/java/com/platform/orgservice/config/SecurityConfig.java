@@ -3,6 +3,7 @@ package com.platform.orgservice.config;
 import com.platform.orgservice.security.MemberMirrorFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -12,8 +13,12 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
 /**
  * JWT 디코더(JWKS + issuer/audience 검증)와 roles→ROLE_ 변환기는 common-starter가 준다(S-02).
  * 여기에는 이 서비스만의 것 — 어떤 경로를 열지, 어떤 필터를 끼울지 — 만 남긴다.
+ *
+ * {@code @EnableMethodSecurity}는 AgentMemberController의 {@code @PreAuthorize("hasRole('ADMIN')")}가
+ * 동작하려면 필요하다 — 이 모듈의 다른 컨트롤러는 PermissionFacade로 자체 인가하므로 지금까지는 없었다.
  */
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
 
     /**
