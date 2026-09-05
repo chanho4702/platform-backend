@@ -78,10 +78,10 @@ public class OpenApiConfig {
                 responses = new ApiResponses();
                 operation.setResponses(responses);
             }
-            putIfAbsent(responses, "401", "인증되지 않았습니다 — 토큰이 없거나 만료됐습니다.");
-            putIfAbsent(responses, "403", "권한이 없습니다.");
+            putIfAbsent(responses, "401", "인증 실패 — 토큰 없음·만료·무효");
+            putIfAbsent(responses, "403", "권한 없음");
             if (hasPathVariable(handlerMethod)) {
-                putIfAbsent(responses, "404", "대상을 찾을 수 없습니다.");
+                putIfAbsent(responses, "404", "대상 없음");
             }
             if (takesRequestBody(handlerMethod)) {
                 putIfAbsent(responses, "400", "요청 검증 실패");
