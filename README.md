@@ -28,7 +28,7 @@ dev 오프셋 규약은 운영 포트 **+10000**이다(도커 배포판과 공�
 
 | 패키지 | 내용 |
 |---|---|
-| `platform.org.v1` | `PermissionService` — `CheckPermission` · `ListUserGrants` · `CreateGrant` · `RevokeGrant` |
+| `platform.org.v1` | `PermissionService` — `CheckPermission` · `ListUserGrants` · `CreateGrant` · `RevokeGrant` · `ListUserTeams` · `ValidatePrincipals` · `LookupMembers` · `LookupTeams` |
 | `platform.wiki.v1` | `WikiContentService` — `GetPageContent` · `GetAttachmentMeta` · `ListPageContents`(stream) · `ListAttachments`(stream) |
 | `platform.events.v1` | `EventEnvelope` + 도메인 이벤트(페이지·스페이스·첨부). Redis Streams 페이로드 |
 
@@ -67,6 +67,13 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 
 판정은 직접 grant와 팀 grant를 병합해 **최고 role**을 취하고, `GLOBAL` grant는 전 리소스에 적용된다.
 최초 관리자는 `PLATFORM_BOOTSTRAP_ADMIN_ID`로 시드한다.
+
+### 이름 조회 (0.15.0)
+
+- **`LookupMembers(emails, usernames)` → `MemberMatch[]`** — 이메일(또는 `username` = 이메일 local-part)로 우리 계정을 찾는다. 컨플루언스 이관이 원본 작성자·제한 주체를 짝지을 때 쓴다.
+- **`LookupTeams(names)` → `TeamMatch[]`** — 원본 그룹 이름으로 우리 팀을 찾는다.
+
+둘 다 trim + 대소문자 무시로 대조하고 **매칭된 것만** 돌려준다(못 찾은 질의는 응답에서 빠진다 — 호출측이 fail-closed로 닫는다). 활성 멤버만 보고, 한 질의에 후보가 둘 이상이면 매칭으로 세지 않는다 — `member.email`에 UNIQUE가 없어 누구인지 모르는 채로 하나를 고르면 남의 이름으로 문서가 쓰인다. 한 요청의 항목 상한은 200이고 넘으면 `INVALID_ARGUMENT`다.
 
 > ⚠️ **기본값이 실행 방식에 따라 다르다.** `application.yml`은 `${PLATFORM_BOOTSTRAP_ADMIN_ID:}` — 즉 **코드 기본값은 빈 값이고, 비어 있으면 `BootstrapAdminSeeder`가 시딩을 건너뛴다.** `gradlew :org-service:bootRun`으로 직접 띄우면 아무도 자동으로 관리자가 되지 않는다.
 > 반면 **compose는 `${PLATFORM_BOOTSTRAP_ADMIN_ID:-1}`로 1을 주입**하므로 컨테이너 스택에서는 사용자 1이 재기동마다 GLOBAL ADMIN으로 복구된다. 운영 배포 전 `.env`에 실제 관리자 id를 명시하거나 빈 값으로 두어 비활성화할 것.

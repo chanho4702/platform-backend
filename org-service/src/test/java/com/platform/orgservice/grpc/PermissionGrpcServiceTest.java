@@ -31,6 +31,7 @@ class PermissionGrpcServiceTest {
     @Autowired com.platform.orgservice.repository.TeamMemberRepository teamMembers;
     @Autowired com.platform.orgservice.repository.TeamRepository teamRepo;
     @Autowired com.platform.orgservice.repository.MemberRepository memberRepo;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     Server server;
     ManagedChannel channel;
@@ -216,5 +217,90 @@ class PermissionGrpcServiceTest {
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(PrincipalKind.PRINCIPAL_USER, 999L),
                         org.assertj.core.groups.Tuple.tuple(PrincipalKind.PRINCIPAL_KIND_UNSPECIFIED, 1L));
+    }
+
+    // ── LookupMembers / LookupTeams (0.15.0) — 이관이 원본 사람·그룹을 짝짓는 창구 ──
+
+    @Test
+    void LookupMembers_이메일과_username_local_part로_찾고_대소문자를_무시한다() {
+        memberRepo.save(com.platform.orgservice.domain.Member.of(42L, "앨리스", "Alice@Example.com"));
+        memberRepo.save(com.platform.orgservice.domain.Member.of(43L, "밥", "bob@example.com"));
+
+        LookupMembersResponse response = stub.lookupMembers(LookupMembersRequest.newBuilder()
+                .addEmails("  ALICE@example.com ")   // trim + 대소문자 무시
+                .addUsernames("BOB")                 // username은 이메일 local-part로 본다
+                .build());
+
+        assertThat(response.getMatchesList())
+                .extracting(MemberMatch::getQuery, MemberMatch::getMemberId, MemberMatch::getDisplayName)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("  ALICE@example.com ", 42L, "앨리스"),
+                        org.assertj.core.groups.Tuple.tuple("BOB", 43L, "밥"));
+    }
+
+    /** 없는 사람은 응답에서 빠진다 — 호출측이 "못 찾았다"를 fail-closed로 처리한다. */
+    @Test
+    void LookupMembers_못_찾은_질의는_응답에_담기지_않는다() {
+        memberRepo.save(com.platform.orgservice.domain.Member.of(42L, "앨리스", "alice@example.com"));
+
+        LookupMembersResponse response = stub.lookupMembers(LookupMembersRequest.newBuilder()
+                .addEmails("alice@example.com").addEmails("ghost@example.com")
+                .addUsernames("ghost")
+                .build());
+
+        assertThat(response.getMatchesList()).extracting(MemberMatch::getQuery)
+                .containsExactly("alice@example.com");
+    }
+
+    /** 퇴사자에게 이관 문서를 붙이면 아무도 손댈 수 없는 문서가 된다. */
+    @Test
+    void LookupMembers_비활성_계정은_매칭하지_않는다() {
+        memberRepo.saveAndFlush(com.platform.orgservice.domain.Member.of(44L, "퇴사자", "gone@example.com"));
+        // 상태를 바꾸는 도메인 경로가 아직 없어 원장을 직접 눌러 둔다(스키마는 DEACTIVATED를 허용한다).
+        jdbc.update("update member set status = 'DEACTIVATED' where id = 44");
+
+        LookupMembersResponse response = stub.lookupMembers(LookupMembersRequest.newBuilder()
+                .addEmails("gone@example.com").addUsernames("gone").build());
+
+        assertThat(response.getMatchesList()).isEmpty();
+    }
+
+    /** 후보가 둘이면 누구인지 모른다 — 하나를 고르면 남의 이름으로 문서가 쓰인다. */
+    @Test
+    void LookupMembers_후보가_둘_이상인_질의는_매칭하지_않는다() {
+        memberRepo.save(com.platform.orgservice.domain.Member.of(45L, "김운영", "ops@a.example.com"));
+        memberRepo.save(com.platform.orgservice.domain.Member.of(46L, "이운영", "ops@b.example.com"));
+
+        LookupMembersResponse response = stub.lookupMembers(
+                LookupMembersRequest.newBuilder().addUsernames("ops").build());
+
+        assertThat(response.getMatchesList()).isEmpty();
+    }
+
+    @Test
+    void LookupTeams_팀_이름을_대소문자_무시로_찾고_없는_이름은_뺀다() {
+        var team = teamRepo.save(com.platform.orgservice.domain.Team.of("플랫폼팀", null));
+
+        LookupTeamsResponse response = stub.lookupTeams(LookupTeamsRequest.newBuilder()
+                .addNames(" 플랫폼팀 ").addNames("없는팀").build());
+
+        assertThat(response.getMatchesList())
+                .extracting(TeamMatch::getQuery, TeamMatch::getTeamId, TeamMatch::getName)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(" 플랫폼팀 ", team.getId(), "플랫폼팀"));
+    }
+
+    @Test
+    void Lookup은_요청_상한_200을_넘으면_INVALID_ARGUMENT() {
+        LookupMembersRequest.Builder members = LookupMembersRequest.newBuilder();
+        for (int i = 0; i < 201; i++) members.addEmails("user" + i + "@example.com");
+        assertThatThrownBy(() -> stub.lookupMembers(members.build()))
+                .isInstanceOf(io.grpc.StatusRuntimeException.class)
+                .hasMessageContaining("INVALID_ARGUMENT");
+
+        LookupTeamsRequest.Builder teams = LookupTeamsRequest.newBuilder();
+        for (int i = 0; i < 201; i++) teams.addNames("team" + i);
+        assertThatThrownBy(() -> stub.lookupTeams(teams.build()))
+                .isInstanceOf(io.grpc.StatusRuntimeException.class)
+                .hasMessageContaining("INVALID_ARGUMENT");
     }
 }

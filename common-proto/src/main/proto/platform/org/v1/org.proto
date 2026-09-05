@@ -17,6 +17,11 @@ service PermissionService {
   rpc ListUserTeams(ListUserTeamsRequest) returns (ListUserTeamsResponse);
   // 페이지 제한 저장 전 주체 실재 검증 — 존재하지 않는 사용자·팀으로 잠기는 구성을 막는다
   rpc ValidatePrincipals(ValidatePrincipalsRequest) returns (ValidatePrincipalsResponse);
+  // 이름으로 우리 계정을 찾는다(0.15.0) — 이관이 원본 작성자·제한 주체를 짝지을 창구.
+  // id를 아는 ValidatePrincipals와 방향이 반대다: 여기는 id를 모르는 쪽에서 물어본다.
+  rpc LookupMembers(LookupMembersRequest) returns (LookupMembersResponse);
+  // 이름으로 우리 팀을 찾는다(0.15.0) — 원본 그룹 이름을 팀에 짝짓는다.
+  rpc LookupTeams(LookupTeamsRequest) returns (LookupTeamsResponse);
 }
 
 enum ResourceType { RESOURCE_TYPE_UNSPECIFIED = 0; GLOBAL = 1; SPACE = 2; PROJECT = 3; }
@@ -79,3 +84,30 @@ message PrincipalRef {
 message ValidatePrincipalsRequest { repeated PrincipalRef principals = 1; }
 // 요청 순서와 무관하게, 실재하지 않거나 형식이 잘못된 주체만 반환한다.
 message ValidatePrincipalsResponse { repeated PrincipalRef missing = 1; }
+
+// ── 이름 조회(0.15.0) ─────────────────────────────────────────────
+// 대조는 trim + 대소문자 무시다. 한 질의에 활성 멤버가 둘 이상 걸리면 **매칭으로 세지 않는다** —
+// 누구인지 모르는 채로 하나를 고르면 이관이 남의 이름으로 문서를 쓴다(fail-closed).
+// 요청 항목 수 상한은 200이다(emails + usernames 합, names 각각). 넘으면 INVALID_ARGUMENT.
+
+message LookupMembersRequest {
+  repeated string emails = 1;
+  // 원본이 이메일을 안 주는 경우의 차선. org에는 username 컬럼이 없어 **이메일 local-part**로 본다.
+  repeated string usernames = 2;
+}
+// 매칭된 것만 담는다. query는 요청에 실렸던 문자열 그대로라 호출측이 바로 되짚을 수 있다.
+message MemberMatch {
+  string query = 1;
+  int64 member_id = 2;
+  string display_name = 3;
+  string email = 4;
+}
+message LookupMembersResponse { repeated MemberMatch matches = 1; }
+
+message LookupTeamsRequest { repeated string names = 1; }
+message TeamMatch {
+  string query = 1;
+  int64 team_id = 2;
+  string name = 3;
+}
+message LookupTeamsResponse { repeated TeamMatch matches = 1; }
