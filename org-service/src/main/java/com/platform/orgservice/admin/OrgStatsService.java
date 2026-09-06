@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -30,6 +31,14 @@ public class OrgStatsService {
 
     /** 전역 통계라 사용자별로 갈리지 않는다 — 항목이 하나뿐인 캐시. */
     private static final String KEY = "org-stats";
+
+    /**
+     * 응답에 담는 순서. enum 선언 순서(PENDING이 먼저)가 아니라 화면이 읽는 순서다 —
+     * 카드가 {@code Object.entries()}로 그대로 늘어놓아도 활성부터 보이게 한다.
+     */
+    private static final List<MemberStatus> DISPLAY_ORDER = List.of(
+            MemberStatus.ACTIVE, MemberStatus.PENDING, MemberStatus.SUSPENDED, MemberStatus.DEACTIVATED);
+
     private static final Duration TTL = Duration.ofSeconds(60);
 
     private final PermissionFacade permissions;
@@ -58,7 +67,7 @@ public class OrgStatsService {
      */
     private OrgStatsResponse compute() {
         Map<String, Long> byStatus = new LinkedHashMap<>();
-        for (MemberStatus status : MemberStatus.values()) {
+        for (MemberStatus status : DISPLAY_ORDER) {
             byStatus.put(status.name(), 0L);
         }
         for (MemberRepository.StatusCount row : members.countByStatusForKind(MemberKind.HUMAN)) {
