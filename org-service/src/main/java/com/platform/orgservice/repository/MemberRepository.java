@@ -38,6 +38,21 @@ public interface MemberRepository extends JpaRepository<Member, Long>, JpaSpecif
                                                   @Param("emails") Collection<String> emails);
 
     /**
+     * 관리자 대시보드 통계 — 종류별로 상태 분포를 한 번에 센다(GROUP BY 하나).
+     * 사람과 에이전트를 나눠 세는 이유는 응답에서 둘을 따로 내기 때문이다(이중 계수 방지).
+     */
+    @Query("select m.status as status, count(m) as count from Member m where m.kind = :kind group by m.status")
+    List<StatusCount> countByStatusForKind(@Param("kind") MemberKind kind);
+
+    /** {@link #countByStatusForKind} 결과 한 줄. */
+    interface StatusCount {
+        MemberStatus getStatus();
+        long getCount();
+    }
+
+    long countByKind(MemberKind kind);
+
+    /**
      * 이메일 local-part 일치(대소문자 무시) — org에는 username 컬럼이 없어 이것이 username 규칙이다.
      * {@code locate('@', email) > 1}로 '@'가 없거나 맨 앞인 값을 먼저 걸러 낸다(substring 인자가 음수가 된다).
      */

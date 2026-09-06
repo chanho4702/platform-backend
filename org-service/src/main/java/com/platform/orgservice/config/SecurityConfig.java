@@ -64,6 +64,9 @@ public class SecurityConfig {
                 // 그 밖은 관리 도메인 — 공개 엔드포인트 없음. 세부 인가(GLOBAL ADMIN)는 PermissionFacade가 판정.
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()
+                        // 헬스·빌드 정보. 내부 전용 체인(/internal/org/**)에는 걸리지 않으므로 여기서 연다.
+                        // 게이트웨이가 상태판을 그리려고 토큰 없이 부르고, 나머지 /actuator/**는 애초에 노출하지 않는다.
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
                 .addFilterAfter(memberMirrorFilter, AuthorizationFilter.class);

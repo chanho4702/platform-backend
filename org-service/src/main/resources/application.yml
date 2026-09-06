@@ -38,6 +38,20 @@ springdoc:
   # 공통 오류는 OpenApiConfig의 OperationCustomizer가 붙이고, 사유가 제각각인 409는 @ConflictResponse를 붙인 곳에만 들어간다.
   override-with-generic-response: false
 
+# Actuator — 내부 네트워크 전용이다. 게이트웨이 라우트는 /api/**뿐이고 nginx도 /actuator를 넘기지 않는다.
+# health와 info 둘만 노출하고, 상세(components.db)는 게이트웨이 상태판이 DB 상태를 읽으므로 항상 낸다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+  info:
+    build:
+      enabled: true
+
 eureka:
   client:
     service-url:

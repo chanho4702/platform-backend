@@ -20,6 +20,9 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long>,
 
     Optional<Invitation> findByTokenHash(String tokenHash);
 
+    /** 관리자 대시보드 통계 — 아직 살아 있는 초대 수(PENDING). */
+    long countByStatus(com.platform.orgservice.domain.InvitationStatus status);
+
     /**
      * 이 이메일의 살아 있는 초대. 여러 건이 남아 있어도 <b>가장 최근 것만</b> 유효하다 —
      * 생성 시점에 이전 것을 EXPIRED로 눕히지만, 그래도 하나로 고정해 판단이 흔들리지 않게 한다.
