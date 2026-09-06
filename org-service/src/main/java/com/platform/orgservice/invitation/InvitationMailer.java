@@ -1,81 +1,46 @@
 package com.platform.orgservice.invitation;
 
+import com.platform.orgservice.mail.MailOutboxService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Properties;
 
 /**
- * 초대 메일 발송(선택).
+ * 초대 메일 — 본문을 만들어 플랫폼 메일 큐에 넣는다.
  *
- * <p>SMTP가 설정돼 있지 않으면 아무것도 보내지 않고 {@code false}를 돌려준다 — 그러면 화면이
- * "링크를 복사해 전달하세요"로 안내한다. 메일을 못 보낸다고 초대 생성을 실패시키지 않는다:
- * 초대의 본질은 원장에 남는 행이고, 메일은 전달 수단일 뿐이다.
+ * <p>예전에는 여기서 {@code JavaMailSender}로 <b>초대 트랜잭션 안에서 동기 발송</b>했다. 그러면 초대
+ * 생성이 SMTP 지연에 묶이고, 설정·자격증명·재시도가 위키·ALM과 따로 놀았다. 지금은 {@code mail_outbox}에
+ * 행을 넣고(같은 트랜잭션 — 초대가 롤백되면 메일도 사라진다) 워커가 보낸다.
  *
- * <p>{@code JavaMailSender}를 Boot 자동설정(spring.mail.*)에 맡기지 않고 직접 만드는 이유는,
- * 미설정 상태를 "빈이 없음"이 아니라 "보내지 않음"으로 다루기 위해서다.
+ * <p>{@code mailSent}의 뜻은 그래서 <b>"큐에 넣었다"</b>이다. 배달 성공이 아니다 — 실제 결과는
+ * 관리 화면의 발송 로그에 남는다. 메일을 못 보낸다고 초대 생성을 실패시키지 않는 원칙은 그대로다:
+ * 초대의 본질은 원장에 남는 행이고, 메일은 전달 수단일 뿐이다(false면 화면이 링크 복사를 안내한다).
  */
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class InvitationMailer {
 
     private static final DateTimeFormatter EXPIRY_FORMAT =
             DateTimeFormatter.ofPattern("yyyy년 M월 d일 HH:mm").withZone(ZoneId.systemDefault());
 
-    private final JavaMailSender sender; // 미설정이면 null
-    private final String from;
+    private final MailOutboxService outbox;
 
-    public InvitationMailer(@Value("${platform.org.mail.host:}") String host,
-                            @Value("${platform.org.mail.port:587}") int port,
-                            @Value("${platform.org.mail.username:}") String username,
-                            @Value("${platform.org.mail.password:}") String password,
-                            @Value("${platform.org.mail.from:}") String from) {
-        this.from = (from == null || from.isBlank()) ? username : from;
-        if (host == null || host.isBlank()) {
-            this.sender = null;
-            log.info("초대 메일 미설정(platform.org.mail.host 없음) — 초대는 링크 복사로 전달한다");
-            return;
-        }
-        JavaMailSenderImpl impl = new JavaMailSenderImpl();
-        impl.setHost(host.trim());
-        impl.setPort(port);
-        if (username != null && !username.isBlank()) impl.setUsername(username.trim());
-        if (password != null && !password.isBlank()) impl.setPassword(password);
-        impl.setDefaultEncoding("UTF-8");
-        Properties props = impl.getJavaMailProperties();
-        props.put("mail.smtp.auth", String.valueOf(username != null && !username.isBlank()));
-        props.put("mail.smtp.starttls.enable", "true");
-        props.put("mail.smtp.timeout", "5000");
-        props.put("mail.smtp.connectiontimeout", "5000");
-        props.put("mail.smtp.writetimeout", "5000");
-        this.sender = impl;
-    }
-
-    public boolean isConfigured() { return sender != null && from != null && !from.isBlank(); }
-
-    /** @return 실제로 보냈는가. 미설정·실패 모두 false — 화면은 링크 복사로 넘어간다. */
+    /** @return 큐에 넣었는가. 메일이 꺼져 있거나 실패면 false — 화면은 링크 복사로 넘어간다. */
     public boolean send(String toEmail, String inviterName, String message,
                         List<String> teamNames, String inviteUrl, Instant expiresAt) {
-        if (!isConfigured()) return false;
         try {
-            SimpleMailMessage mail = new SimpleMailMessage();
-            mail.setFrom(from);
-            mail.setTo(toEmail);
-            mail.setSubject("[플랫폼] " + inviterName + "님이 초대했습니다");
-            mail.setText(body(inviterName, message, teamNames, inviteUrl, expiresAt));
-            sender.send(mail);
-            return true;
+            return outbox.enqueue(List.of(toEmail), "[플랫폼] " + inviterName + "님이 초대했습니다",
+                    body(inviterName, message, teamNames, inviteUrl, expiresAt), null, "org")
+                    .accepted() > 0;
         } catch (Exception e) {
             // 링크는 응답으로 돌아가므로 초대 자체는 살아 있다. 주소를 로그에 남기지 않는다.
-            log.warn("초대 메일 발송 실패: {}", e.getClass().getSimpleName());
+            log.warn("초대 메일 큐잉 실패: {}", e.getClass().getSimpleName());
             return false;
         }
     }

@@ -98,12 +98,30 @@ platform:
       resource-admin-enabled: ${ORG_INVITATION_RESOURCE_ADMIN:true}
       expiry-cron: ${ORG_INVITATION_EXPIRY_CRON:0 */10 * * * *}
     mail:
-      # 미설정(host 비어 있음)이면 메일을 보내지 않고 화면이 초대 링크 복사로 안내한다.
-      host: ${PLATFORM_MAIL_HOST:}
-      port: ${PLATFORM_MAIL_PORT:587}
-      username: ${PLATFORM_MAIL_USERNAME:}
-      password: ${PLATFORM_MAIL_PASSWORD:}
-      from: ${PLATFORM_MAIL_FROM:}
+      # 플랫폼 메일 허브. 발송은 이 서비스 한 곳에서만 하고 wiki·alm은 /internal/org/mail로 넘긴다.
+      #
+      # 운영 중 정본은 DB 한 행(mail_setting)이다 — 관리 화면이 고친다. 아래 seed.*는 **행이 없을 때
+      # 최초 1회**만 쓰인다. 기동마다 env로 덮으면 화면에서 고친 값이 재배포에 조용히 되돌아간다.
+      mode: ${MAIL_MODE:none}          # 설치 시 고른 인프라(none|external|relay|full|dev). 화면 배지용 안내값.
+      # SMTP 비밀번호 암호화 키(AES-GCM, 32바이트 hex = 64자). 없으면 비밀번호 저장이 400으로 거부된다 —
+      # 평문 폴백을 두면 "설정은 됐는데 사실 평문"인 상태가 조용히 운영으로 나간다.
+      enc-key: ${ORG_SETTINGS_ENC_KEY:}
+      # SMTP 연결·읽기·쓰기 타임아웃. 죽은 서버 하나가 큐 전체를 세우지 않게 한다.
+      smtp-timeout-ms: ${MAIL_SMTP_TIMEOUT_MS:10000}
+      seed:
+        enabled: ${MAIL_SEED_ENABLED:false}
+        host: ${MAIL_SEED_HOST:}
+        port: ${MAIL_SEED_PORT:587}
+        username: ${MAIL_SEED_USERNAME:}
+        password: ${MAIL_SEED_PASSWORD:}
+        tls: ${MAIL_SEED_TLS:STARTTLS}
+        from-address: ${MAIL_SEED_FROM_ADDRESS:}
+        from-name: ${MAIL_SEED_FROM_NAME:}
+      outbox:
+        poll-ms: ${MAIL_OUTBOX_POLL_MS:5000}
+        batch-size: ${MAIL_OUTBOX_BATCH:20}
+        retention-days: ${MAIL_OUTBOX_RETENTION_DAYS:30}
+        cleanup-cron: ${MAIL_OUTBOX_CLEANUP_CRON:0 40 4 * * *}
     keycloak:
       # 계정 비활성/활성(Admin REST). 시크릿이 없으면 no-op이고 member_event에만 흔적이 남는다.
       issuer-uri: ${KEYCLOAK_ISSUER_URI:}

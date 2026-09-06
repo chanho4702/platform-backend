@@ -33,6 +33,12 @@ platform:
       base-url: https://platform.test
       # 스케줄러가 테스트 중에 끼어들지 않게 먼 시각으로 둔다(만료는 서비스 호출로 직접 검증)
       expiry-cron: "0 0 3 1 1 *"
+    mail:
+      # 테스트는 워커가 스스로 돌지 않게 한다 — 재시도·백오프는 drainOnce()를 직접 불러 검증한다.
+      # (그러지 않으면 5초 폴링이 테스트 중간에 끼어들어 시도 횟수가 흔들린다.)
+      outbox:
+        poll-ms: 3600000
+        cleanup-cron: "0 0 3 1 1 *"
     avatar:
       files-dir: build/test-avatars
       s3:

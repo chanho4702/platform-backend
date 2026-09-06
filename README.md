@@ -169,13 +169,71 @@ SUSPENDED·DEACTIVATED는 그 사람이 마지막 GLOBAL ADMIN이면 `409 {"erro
 | `ORG_INVITATION_EMAIL_MATCH_PROVIDERS` | `GOOGLE` | 토큰 없이 이메일 대조만으로 소진 가능한 로그인 경로(콤마 구분) |
 | `ORG_INVITATION_RESOURCE_ADMIN` | `true` | 리소스 ADMIN의 초대 허용 |
 | `ORG_INVITATION_EXPIRY_CRON` | `0 */10 * * * *` | 만료 배치 |
-| `PLATFORM_MAIL_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_FROM` | (빈 값) / `587` | 초대 메일. `HOST`가 비면 보내지 않고 `mailSent:false` |
+| 초대 메일 | — | SMTP 설정은 org-service가 아니라 **플랫폼 메일 설정**이 정본이다(아래 절). 꺼져 있으면 `mailSent:false`이고 화면이 링크 복사를 안내한다 |
 | `KEYCLOAK_ISSUER_URI` | (빈 값) | Keycloak realm 주소(`.../realms/{realm}`) |
 | `KC_ADMIN_CLIENT_ID` / `KC_ADMIN_CLIENT_SECRET` | `platform-admin` / (빈 값) | 계정 비활성/활성용 service account. 시크릿이 비면 no-op |
 
 > ⚠️ **인프라 후속(U4).** realm에 `platform-admin`(confidential, service account, `realm-management: manage-users, view-users`)
 > 클라이언트를 추가하고 compose에 위 env를 주입해야 계정 잠금이 실제로 동작한다. 그전까지는 no-op으로 흘러가고
 > `member_event`에만 흔적이 남는다. 게이트웨이는 `/internal/**`을 라우팅하지 않아야 한다.
+
+---
+
+### 플랫폼 메일 (V8, M1)
+
+**발송은 org-service 한 곳에서만 한다.** 위키·ALM은 JavaMail을 버리고 `POST /internal/org/mail`로 넘긴다 —
+설정·자격증명·재시도·발송 로그가 서비스마다 갈라지면 "메일이 안 갔다"를 어디서 봐야 하는지부터 달라진다.
+**수신자 결정(구독·차단 상태)·커밋 뒤 배치·다이제스트 스케줄은 여전히 각 서비스 몫**이다: 누가 받아야 하는지는
+그 서비스만 안다.
+
+설정은 **DB 한 행**(`mail_setting`, `id=1`)이 정본이고 관리 화면이 편집한다. `MAIL_MODE`는 설치 시점의
+인프라 선택(어떤 컨테이너를 띄우고 무엇을 초기값으로 심을지)이고, `MAIL_SEED_*`는 **행이 없을 때 최초 1회**만
+쓰인다 — 기동마다 env로 덮으면 화면에서 고친 값이 재배포에 조용히 되돌아간다.
+
+발송은 **outbox**(`mail_outbox`)를 거친다. 넣기는 호출측 트랜잭션에 참여하고(초대가 롤백되면 그 메일도
+사라진다), 워커가 5초마다 배치 20건씩 집어 보낸다. 행은 `FOR UPDATE SKIP LOCKED`로 잠근다 — 인스턴스가
+배포 중 잠깐 둘로 겹쳐도 같은 메일이 두 번 나가지 않는다. 실패는 지수 백오프(30초·1분·2분·4분)로 최대
+**5회**까지 다시 시도하고 그다음 `FAILED`로 눕는다. 종결분(SENT·FAILED)은 30일 뒤 하루 한 번 정리한다.
+
+> **`mailSent`의 뜻이 바뀌었다.** 초대 응답의 `mailSent`는 이제 "보냈다"가 아니라 **"큐에 넣었다"**이다
+> (`enabled`이고 큐잉에 성공하면 `true`). 실제 배달 결과는 발송 로그에 남는다. 예전처럼 초대 트랜잭션 안에서
+> 동기 발송하지 않는다 — 초대 생성이 SMTP 지연에 묶이고 발송 실패가 초대를 롤백시켰다.
+
+**SMTP 비밀번호는 AES-GCM으로만 저장된다**(`ORG_SETTINGS_ENC_KEY`, 32바이트 hex = 64자). 키가 없으면
+비밀번호 저장이 `400 {"error":"메일 비밀번호를 저장하려면 ORG_SETTINGS_ENC_KEY가 필요합니다"}`로 거부되고,
+나머지 설정(호스트·포트·발신자)은 그대로 동작한다. 평문 폴백을 두지 않는 이유는 "설정은 됐는데 사실 평문"인
+상태가 조용히 운영으로 나가기 때문이다. 비밀번호는 **어떤 응답에도 실리지 않는다** — `passwordSet` 불리언만 나간다.
+
+| 메서드 | 경로 | 인가 | 요청 → 응답 |
+|---|---|---|---|
+| `GET` | `/api/org/settings/mail` | GLOBAL ADMIN | → `{enabled, mode, host, port, username, passwordSet, tls, fromAddress, fromName, updatedAt, updatedBy}` |
+| `PUT` | `/api/org/settings/mail` | GLOBAL ADMIN | 같은 필드 + `password?` — **생략=유지, `""`=삭제, 값=교체**. `enabled`면 `host`·`port`·`fromAddress` 필수 |
+| `POST` | `/api/org/settings/mail/test` | GLOBAL ADMIN | `{to?}`(기본 = 요청자 JWT 이메일) → **동기 발송**, `{ok, error?}`. 실패해도 `200`이고 SMTP 문구가 그대로 담긴다 |
+| `GET` | `/api/org/settings/mail/log?status=&page=&size=` | GLOBAL ADMIN | → `{items[{id,to,subject,source,status,attempts,lastError,createdAt,sentAt}], page, size, total}`. 본문은 담지 않는다 |
+| `POST` | `/api/org/settings/mail/log/{id}/retry` | GLOBAL ADMIN | `FAILED` → `PENDING`(시도 0으로 초기화), `204`. 다른 상태면 `409 실패한 발송만 다시 보낼 수 있습니다` |
+
+**서비스 간 전용 경로** — 게이트웨이가 라우팅하지 않고 `X-Internal-Token`만이 인증이다.
+
+| 메서드 | 경로 | 요청 → 응답 |
+|---|---|---|
+| `POST` | `/internal/org/mail` | `{to[], subject, text, html?, source}` → `202 {accepted, disabled}`. `to` 최대 100(넘으면 `400`), 빈 주소는 버리고 중복은 하나로 친다. `disabled:true`는 오류가 아니라 "메일이 꺼져 있음"이다 |
+| `GET` | `/internal/org/mail/status` | → `{enabled}` — 소비자의 "메일 켜짐" UI용(소비자 쪽에서 60초 캐시). 켜져 있어도 호스트·보내는 주소가 비면 `false`다 |
+
+| 변수 | 기본값 | 용도 |
+|---|---|---|
+| `MAIL_MODE` | `none` | 설치 시 고른 인프라 — `none`·`external`·`relay`·`full`·`dev`. 화면 배지용 안내값이고 동작을 바꾸지 않는다 |
+| `ORG_SETTINGS_ENC_KEY` | (빈 값) | SMTP 비밀번호 암호화 키(32바이트 hex). 비면 비밀번호 저장이 `400`. 형식이 틀리면 **기동을 세운다** |
+| `MAIL_SEED_ENABLED` | `false` | 최초 시드값 — 행이 없을 때만 |
+| `MAIL_SEED_HOST` / `_PORT` | (빈 값) / `587` | 〃 |
+| `MAIL_SEED_USERNAME` / `_PASSWORD` | (빈 값) | 〃. 비밀번호는 `ORG_SETTINGS_ENC_KEY`가 있을 때만 심는다(없으면 경고만 남기고 건너뛴다) |
+| `MAIL_SEED_TLS` | `STARTTLS` | `NONE` · `STARTTLS` · `SSL` |
+| `MAIL_SEED_FROM_ADDRESS` / `_FROM_NAME` | (빈 값) | 〃 |
+| `MAIL_SMTP_TIMEOUT_MS` | `10000` | 연결·읽기·쓰기 타임아웃. 죽은 서버 하나가 큐 전체를 세우지 않게 한다 |
+| `MAIL_OUTBOX_POLL_MS` / `_BATCH` | `5000` / `20` | 워커 폴링 주기·배치 크기 |
+| `MAIL_OUTBOX_RETENTION_DAYS` / `_CLEANUP_CRON` | `30` / `0 40 4 * * *` | 종결분 보관 기간·정리 배치 |
+
+> 기존 `PLATFORM_MAIL_HOST`/`_PORT`/`_USERNAME`/`_PASSWORD`/`_FROM`은 **제거됐다**. 어디에도 설정돼 있지
+> 않아 호환 계층을 두지 않았다 — 남겨 두면 "env에도 있고 DB에도 있는" 두 정본이 생긴다.
 
 ---
 
