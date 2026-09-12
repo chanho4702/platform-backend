@@ -149,8 +149,23 @@ public class Member {
         this.suspendedAt = null;
     }
 
-    /** 부트스트랩 관리자 시드가 만든 계정 표시. */
-    public void markBootstrap() { this.joinedVia = JoinedVia.BOOTSTRAP; }
+    /**
+     * 부트스트랩 관리자({@code PLATFORM_BOOTSTRAP_ADMIN_ID}) 활성화 — 승인 대기를 건너뛴다.
+     *
+     * <p>첫 설치의 유일한 관리자는 자기를 승인해 줄 사람이 없다. 승인 API는 활성 전역 관리자를 요구하므로
+     * PENDING으로 남으면 아무도 그 계정을 풀 수 없다(설치가 거기서 막힌다).
+     *
+     * <p>PENDING일 때만 움직인다 — 사람이 일부러 정지·비활성한 계정을 재기동이 되살리면 안 되고,
+     * 이미 활성인 계정의 합류 경로(INVITE·APPROVAL) 기록을 덮어쓸 이유도 없다.
+     *
+     * @return 이번 호출이 승인 대기를 풀었는가(이력을 남길지 판단용 — 재기동마다 중복 기록하지 않는다)
+     */
+    public boolean markBootstrap() {
+        if (this.status != MemberStatus.PENDING) return false;
+        this.status = MemberStatus.ACTIVE;
+        this.joinedVia = JoinedVia.BOOTSTRAP;
+        return true;
+    }
 
     private void requireStatus(MemberStatus expected, String message) {
         if (this.status != expected) throw new ConflictException(message);

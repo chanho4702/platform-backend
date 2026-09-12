@@ -68,6 +68,23 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 판정은 직접 grant와 팀 grant를 병합해 **최고 role**을 취하고, `GLOBAL` grant는 전 리소스에 적용된다.
 최초 관리자는 `PLATFORM_BOOTSTRAP_ADMIN_ID`로 시드한다.
 
+### 최초 관리자 부트스트랩
+
+`PLATFORM_BOOTSTRAP_ADMIN_ID`(auth-server user id = JWT `sub`)에 기동마다 두 가지를 맞춘다.
+
+1. **GLOBAL ADMIN grant upsert** — 누가 역할을 내려놨어도 재기동이 `ADMIN`으로 복구한다.
+2. **승인 대기 면제** — 이 id는 첫 로그인 미러링에서 `PENDING`이 아니라 `ACTIVE` + `joined_via=BOOTSTRAP`으로
+   만들고, 전체 구성원 팀에 넣고 `member_event(JOINED)`를 한 줄 남긴다. 이미 `PENDING`으로 만들어진 행이 있으면
+   기동 시 같은 승격을 한다(`MemberService.promoteBootstrapAdmin`).
+
+> **왜 면제가 필요한가.** grant만 주면 첫 로그인이 `MemberMirrorFilter`에서 `PENDING`으로 격리돼
+> `/api/org/me` 밖으로 나갈 수 없고(gRPC 판정도 `ACTIVE`가 아니면 거부), 승인 API는 **활성** 전역 관리자를
+> 요구하므로 그 계정을 풀어 줄 사람이 아무도 없다. 예전에는 설치 중 수동 SQL 한 줄이 필요했다 — 지금은 없다.
+
+승격은 **그 id에만, `PENDING`일 때만** 일어난다. 멱등이라 재기동·재로그인에 이력이 중복되지 않고, 사람이 일부러
+정지·비활성한 계정은 기동이 되살리지 않는다. Keycloak의 `ADMIN` 롤 클레임으로는 승격하지 않는다 —
+전역 관리자의 정본은 `GLOBAL/ADMIN` grant다.
+
 ### 이름 조회 (0.15.0)
 
 - **`LookupMembers(emails, usernames)` → `MemberMatch[]`** — 이메일(또는 `username` = 이메일 local-part)로 우리 계정을 찾는다. 컨플루언스 이관이 원본 작성자·제한 주체를 짝지을 때 쓴다.
@@ -82,6 +99,7 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 
 > ⚠️ **기본값이 실행 방식에 따라 다르다.** `application.yml`은 `${PLATFORM_BOOTSTRAP_ADMIN_ID:}` — 즉 **코드 기본값은 빈 값이고, 비어 있으면 `BootstrapAdminSeeder`가 시딩을 건너뛴다.** `gradlew :org-service:bootRun`으로 직접 띄우면 아무도 자동으로 관리자가 되지 않는다.
 > 반면 **compose는 `${PLATFORM_BOOTSTRAP_ADMIN_ID:-1}`로 1을 주입**하므로 컨테이너 스택에서는 사용자 1이 재기동마다 GLOBAL ADMIN으로 복구된다. 운영 배포 전 `.env`에 실제 관리자 id를 명시하거나 빈 값으로 두어 비활성화할 것.
+> 값이 숫자가 아니면 기동이 실패한다(`BootstrapAdminId`) — 오타 난 설치가 "관리자 없는 플랫폼"으로 조용히 떠 있는 쪽이 더 나쁘다.
 
 ### 사용자 초대 · 상태 · 팀 권한 (V4~V6, U1)
 
@@ -89,6 +107,7 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 **이메일**이고, 토큰은 링크 검증·`login_hint`·수락 추적용이다. 처음 로그인한 사람은 `MemberMirrorFilter`가
 `PENDING`으로 만들고, 이메일이 일치하는 살아 있는 초대가 있으면 그 자리에서 소진해 활성 사용자로 만든다.
 초대가 없으면 `GET /api/org/me`와 그 하위 말고는 전부 `403 {"error":"승인 대기 중인 계정입니다"}`다.
+예외는 `PLATFORM_BOOTSTRAP_ADMIN_ID` 하나다(위 "최초 관리자 부트스트랩") — 그 사람은 초대도 승인자도 없으므로 첫 로그인에서 바로 활성이 된다.
 
 > **토큰 원문은 저장하지 않는다(sha256만).** 그래서 `inviteUrl`은 **생성·재발송 응답에만** 담기고 목록에서는
 > 항상 `null`이다. 링크가 다시 필요하면 `POST /invitations/{id}/resend`(새 토큰, 이전 링크는 그 순간 죽음)를
