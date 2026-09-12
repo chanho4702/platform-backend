@@ -20,6 +20,23 @@ spring:
         jwt:
           jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/.well-known/jwks.json}
 
+# Actuator — 내부 네트워크 전용이다(게이트웨이 라우트는 /api·/graphql뿐, nginx도 /actuator를 넘기지 않는다).
+# health와 info 둘만. info의 build.version을 헬스 집계 표의 "버전" 열이 읽는다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+  info:
+    build:
+      enabled: true
+  health:
+    eureka:
+      enabled: false         # 유레카는 대시보드가 따로 본다
+
 eureka:
   client:
     service-url:

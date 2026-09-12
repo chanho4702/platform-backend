@@ -18,7 +18,13 @@ jobs:
           distribution: temurin
           java-version: '24'
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew build
+      # 이미지 버전 스탬프 — /actuator/info의 build.version이 이 값이 되고,
+      # 관리자 대시보드 헬스 집계 표의 "버전" 열이 그걸 읽는다.
+      # 형식 <짧은sha 7자리>-<YYYYMMDD>. GHCR의 sha-<전체sha> 태그와 같은 커밋을 가리킨다.
+      - name: Version stamp
+        id: ver
+        run: echo "app=${GITHUB_SHA::7}-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - run: ./gradlew build -PappVersion=${{ steps.ver.outputs.app }}
 
       # ── 이 리포의 서비스 모듈 배포 (main push만 — 태그 push는 proto 발행 전용이라 제외된다) ──
       # 아래 이미지 스텝은 전부 위 `./gradlew build`(전 모듈 컴파일+테스트) 뒤에만 온다.

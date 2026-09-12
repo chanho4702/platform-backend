@@ -3,7 +3,10 @@ plugins {
     id 'org.springframework.boot' version '4.0.6'
     id 'io.spring.dependency-management' version '1.1.7'
 }
-version = '0.0.1-SNAPSHOT'
+// 이미지 버전 스탬프 — CI가 -PappVersion=<짧은sha>-<YYYYMMDD>로 주입한다.
+// /actuator/info의 build.version이 이 값이 되고, 관리자 대시보드 "버전" 열이 그걸 읽는다.
+// 이름을 appVersion으로 둔 이유: -Pversion은 Gradle 내장 project.version과 겹쳐 이 줄이 덮어써 버린다.
+version = providers.gradleProperty('appVersion').getOrElse('0.0.1-SNAPSHOT')
 java { toolchain { languageVersion = JavaLanguageVersion.of(24) } }
 repositories { mavenCentral() }
 
@@ -34,6 +37,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-graphql'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // health·info 노출 — 헬스 집계가 다른 서비스에 요구하는 것과 같은 계약(build.version 포함).
+    // 그전까지는 actuator가 없어 HealthCatalog가 루트(/) 폴백으로 살아있음만 봤고 버전 열이 비었다.
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation "io.grpc:grpc-netty-shaded:${grpcVersion}"
     implementation "org.opensearch.client:opensearch-java:${openSearchVersion}"
     implementation 'com.fasterxml.jackson.core:jackson-databind'
@@ -52,3 +58,6 @@ dependencies {
 }
 tasks.named('test') { useJUnitPlatform() }
 tasks.named('bootJar') { archiveFileName = 'app.jar' }
+
+// /actuator/info의 build.version — 헬스 집계 표의 "버전" 열이 이 값을 읽는다.
+springBoot { buildInfo() }
