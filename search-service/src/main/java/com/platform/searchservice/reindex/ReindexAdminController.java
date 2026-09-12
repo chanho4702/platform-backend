@@ -1,6 +1,7 @@
 package com.platform.searchservice.reindex;
 
 import com.platform.common.error.ForbiddenException;
+import com.platform.searchservice.index.SearchIndexReadiness;
 import com.platform.searchservice.permission.PermissionClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,10 +30,13 @@ public class ReindexAdminController {
 
     private final ReindexService reindex;
     private final PermissionClient permissions;
+    private final SearchIndexReadiness readiness;
 
     @PostMapping
     public ResponseEntity<ReindexJobView> start(@AuthenticationPrincipal Jwt jwt) {
         long userId = requireGlobalAdmin(jwt);
+        // 색인 준비 전 재색인은 시작하자마자 실패한다. 원인이 드러나는 503으로 먼저 막는다.
+        readiness.requireReady();
         ReindexJobView job = reindex.start();
         // 색인 전체를 다시 만드는 조작이라 누가 언제 눌렀는지가 사후 추적의 출발점이다.
         log.info("재색인 요청 수락: jobId={} requestedBy={}", job.jobId(), userId);
@@ -46,6 +50,7 @@ public class ReindexAdminController {
     @GetMapping("/status")
     public ReindexStatusView indexStatus(@AuthenticationPrincipal Jwt jwt) {
         requireGlobalAdmin(jwt);
+        readiness.requireReady();
         return reindex.indexStatus();
     }
 

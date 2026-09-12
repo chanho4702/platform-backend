@@ -2,6 +2,7 @@ package com.platform.searchservice.event;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.platform.proto.events.v1.EventEnvelope;
+import com.platform.searchservice.index.SearchIndexReadiness;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,6 +70,7 @@ public class RedisStreamEventConsumer {
 
     private final StringRedisTemplate redis;
     private final WikiEventIndexer indexer;
+    private final SearchIndexReadiness readiness;
     private final String stream;
     private final byte[] streamKey;
     private final String consumerGroup;
@@ -91,8 +93,9 @@ public class RedisStreamEventConsumer {
             StringRedisTemplate redis,
             WikiEventIndexer indexer,
             EventConsumerProperties properties,
+            SearchIndexReadiness readiness,
             @Value("${spring.application.name:search-service}") String applicationName) {
-        this(redis, indexer, properties, applicationName, DEFAULT_RETRY_IDLE, DEFAULT_READ_BLOCK);
+        this(redis, indexer, properties, readiness, applicationName, DEFAULT_RETRY_IDLE, DEFAULT_READ_BLOCK);
     }
 
     /** 테스트 전용 — 재시도/블록 타이밍을 줄여 주입한다. 스프링은 이 생성자를 쓰지 않는다. */
@@ -100,6 +103,7 @@ public class RedisStreamEventConsumer {
             StringRedisTemplate redis,
             WikiEventIndexer indexer,
             EventConsumerProperties properties,
+            SearchIndexReadiness readiness,
             String applicationName,
             Duration retryIdle,
             Duration readBlock) {
@@ -112,6 +116,7 @@ public class RedisStreamEventConsumer {
 
         this.redis = redis;
         this.indexer = indexer;
+        this.readiness = readiness;
         this.stream = properties.getStream();
         this.streamKey = stream.getBytes(StandardCharsets.UTF_8);
         this.consumerGroup = properties.getConsumerGroup();
@@ -131,7 +136,10 @@ public class RedisStreamEventConsumer {
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
         verifyStreamSupport();
-        start();
+        // 색인이 준비되기 전에는 소비를 시작하지 않는다. 색인 없이 처리하면 실패가 재시도 상한을
+        // 넘겨 원본 이벤트가 DLQ로 사라진다. 소비하지 않으면 이벤트는 스트림에 남고, 컨슈머
+        // 그룹은 0-0에서 만들어지므로 준비된 뒤 그대로 재생된다.
+        readiness.whenReady(this::start);
     }
 
     public void start() {

@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.RedisCallback;
+import com.platform.searchservice.index.SearchIndexReadiness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,6 +92,11 @@ class RedisStreamEventConsumerBeanCreationTest {
         @Bean
         EventConsumerProperties eventConsumerProperties() {
             return new EventConsumerProperties();
+        }
+
+        @Bean
+        SearchIndexReadiness searchIndexReadiness() {
+            return new SearchIndexReadiness(true);
         }
     }
 }

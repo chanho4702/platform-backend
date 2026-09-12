@@ -11,6 +11,7 @@ import com.platform.common.error.ServiceUnavailableException;
 import com.platform.searchservice.content.WikiContentClient;
 import com.platform.searchservice.index.IndexNames;
 import com.platform.searchservice.index.OpenSearchIndexBootstrap;
+import com.platform.searchservice.index.SearchIndexReadiness;
 import com.platform.searchservice.index.OpenSearchIndexFactory;
 import com.platform.searchservice.index.OpenSearchIndexService;
 import com.platform.searchservice.index.PageDoc;
@@ -91,7 +92,7 @@ class ReindexServiceTest {
                 .build();
         client = new OpenSearchClient(transport);
         factory = new OpenSearchIndexFactory(client, new ObjectMapper());
-        bootstrap = new OpenSearchIndexBootstrap(factory);
+        bootstrap = new OpenSearchIndexBootstrap(factory, new SearchIndexReadiness(true));
         indexes = new OpenSearchIndexService(client);
     }
 

@@ -22,6 +22,7 @@ import com.platform.searchservice.index.AttachmentDoc;
 import com.platform.searchservice.index.IndexNames;
 import com.platform.searchservice.index.IndexingResult;
 import com.platform.searchservice.index.OpenSearchIndexBootstrap;
+import com.platform.searchservice.index.SearchIndexReadiness;
 import com.platform.searchservice.index.OpenSearchIndexService;
 import com.platform.searchservice.index.PageDoc;
 import io.grpc.ManagedChannel;
@@ -133,7 +134,8 @@ class RedisStreamEventConsumerTest {
                 .build();
         openSearch = new OpenSearchClient(transport);
         new OpenSearchIndexBootstrap(
-                new com.platform.searchservice.index.OpenSearchIndexFactory(openSearch, new ObjectMapper()))
+                new com.platform.searchservice.index.OpenSearchIndexFactory(openSearch, new ObjectMapper()),
+                new SearchIndexReadiness(true))
                 .initialize();
         indexes = new OpenSearchIndexService(openSearch);
     }
@@ -395,6 +397,8 @@ class RedisStreamEventConsumerTest {
                         new GrpcWikiContentClient(WikiContentServiceGrpc.newBlockingStub(grpcChannel)),
                         indexes),
                 properties,
+                // 색인은 위에서 이미 확보했다 — 소비 게이트는 열린 상태로 둔다.
+                new SearchIndexReadiness(false),
                 "search-service-test",
                 retryIdle,
                 Duration.ofMillis(50));
