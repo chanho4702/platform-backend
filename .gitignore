@@ -5,3 +5,8 @@ out/
 !.run/
 *.iml
 .superpowers/
+
+# 로컬 환경변수 파일 (공개 리포 — 절대 커밋 금지)
+.env
+.env.*
+!.env.example
