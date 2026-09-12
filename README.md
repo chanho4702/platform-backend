@@ -208,16 +208,23 @@ SUSPENDED·DEACTIVATED는 그 사람이 마지막 GLOBAL ADMIN이면 `409 {"erro
 |---|---|---|---|
 | `GET` | `/api/org/settings/mail` | GLOBAL ADMIN | → `{enabled, mode, host, port, username, passwordSet, tls, fromAddress, fromName, updatedAt, updatedBy}` |
 | `PUT` | `/api/org/settings/mail` | GLOBAL ADMIN | 같은 필드 + `password?` — **생략=유지, `""`=삭제, 값=교체**. `enabled`면 `host`·`port`·`fromAddress` 필수 |
-| `POST` | `/api/org/settings/mail/test` | GLOBAL ADMIN | `{to?}`(기본 = 요청자 JWT 이메일) → **동기 발송**, `{ok, error?}`. 실패해도 `200`이고 SMTP 문구가 그대로 담긴다 |
-| `GET` | `/api/org/settings/mail/log?status=&page=&size=` | GLOBAL ADMIN | → `{items[{id,to,subject,source,status,attempts,lastError,createdAt,sentAt}], page, size, total}`. 본문은 담지 않는다 |
-| `POST` | `/api/org/settings/mail/log/{id}/retry` | GLOBAL ADMIN | `FAILED` → `PENDING`(시도 0으로 초기화), `204`. 다른 상태면 `409 실패한 발송만 다시 보낼 수 있습니다` |
+| `POST` | `/api/org/settings/mail/test` | GLOBAL ADMIN | `{to?}`(기본 = 요청자 JWT 이메일) → **동기 발송**, `{ok, error?}`. 실패해도 `200`이고 SMTP 문구가 그대로 담긴다. 보낼 수 없는 상태(꺼짐·호스트/발신자 공백)면 SMTP를 건드리지 않고 `{ok:false, error:"메일 발송이 꺼져 있거나 호스트·보내는 주소가 비어 있습니다"}`. 받는 주소가 끝내 비면(JWT에 이메일이 없을 때) `400`. 성공·실패 모두 발송 로그에 `source:"test"`로 남는다 |
+| `GET` | `/api/org/settings/mail/log?status=&page=&size=` | GLOBAL ADMIN | → `{items[{id,to,subject,source,status,attempts,lastError,createdAt,sentAt}], page, size, total}`. 본문은 담지 않는다. `status`는 `PENDING`·`SENT`·`FAILED`(`ALL`·생략 = 전부, 그 밖의 값은 `400`), `size`는 **최대 100으로 잘린다**(0 이하면 20), 정렬은 `createdAt DESC, id DESC` 고정 |
+| `POST` | `/api/org/settings/mail/log/{id}/retry` | GLOBAL ADMIN | `FAILED` → `PENDING`(시도 0으로 초기화, 즉시 차례), `204`. 다른 상태면 `409 실패한 발송만 다시 보낼 수 있습니다`, 없는 id면 `404 발송 기록을 찾을 수 없습니다` |
 
 **서비스 간 전용 경로** — 게이트웨이가 라우팅하지 않고 `X-Internal-Token`만이 인증이다.
 
 | 메서드 | 경로 | 요청 → 응답 |
 |---|---|---|
-| `POST` | `/internal/org/mail` | `{to[], subject, text, html?, source}` → `202 {accepted, disabled}`. `to` 최대 100(넘으면 `400`), 빈 주소는 버리고 중복은 하나로 친다. `disabled:true`는 오류가 아니라 "메일이 꺼져 있음"이다 |
+| `POST` | `/internal/org/mail` | `{to[], subject, text, html?, source}` → `202 {accepted, disabled}`. `to`는 1~100개(비거나 넘으면 `400`), 빈 주소는 버리고 중복은 대소문자 무시로 하나로 친다. `subject` 1~500자·`text` 필수·`source` 1~32자(위반은 `400`). `disabled:true`는 오류가 아니라 "메일이 꺼져 있음"이고 그때 `accepted:0`이다 — 소비자는 화면에 다른 안내를 낸다 |
 | `GET` | `/internal/org/mail/status` | → `{enabled}` — 소비자의 "메일 켜짐" UI용(소비자 쪽에서 60초 캐시). 켜져 있어도 호스트·보내는 주소가 비면 `false`다 |
+
+> 응답 봉투는 org-service 공통 `PageResponse`다 — `{items, page, size, total}` 네 개뿐이고 Spring Data
+> `Page`의 구현 세부(`pageable`·`sort`·`last`…)는 싣지 않는다. 관리 화면은 `page`를 자기가 기억한 값으로 쓴다.
+>
+> 화면 쪽 동작(필드 검증·비밀번호 3갈래·테스트 발송 해석·로그 읽는 법)은
+> [`org-admin README`의 관리자 사용 가이드](https://github.com/chanho4702/design-system/blob/main/packages/org-admin/README.md#관리자-사용-가이드--메일-설정),
+> 설치 모드 선택은 [`INSTALL.md` §7](https://github.com/chanho4702/infra-settings/blob/main/INSTALL.md#7-메일-설정-mail_mode를-none-외로-고른-경우)에 있다.
 
 | 변수 | 기본값 | 용도 |
 |---|---|---|
