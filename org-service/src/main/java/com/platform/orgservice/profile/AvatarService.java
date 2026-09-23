@@ -1,6 +1,9 @@
 package com.platform.orgservice.profile;
 
 import com.platform.common.error.NotFoundException;
+import com.platform.orgservice.domain.MemberEventType;
+import com.platform.orgservice.member.MemberEventRecorder;
+import com.platform.orgservice.permission.PermissionFacade;
 import com.platform.orgservice.profile.dto.AvatarView;
 import com.platform.orgservice.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +50,8 @@ public class AvatarService {
     private final MemberRepository members;
     private final MemberProfileRepository profiles;
     private final AvatarStorage storage;
+    private final PermissionFacade permissions;
+    private final MemberEventRecorder events;
 
     public record AvatarImage(Resource resource, String contentType) {}
 
@@ -84,11 +89,41 @@ public class AvatarService {
         return AvatarView.from(profile);
     }
 
-    public void remove(long memberId) {
-        profiles.findById(memberId).ifPresent(profile -> {
+    /** @return 실제로 지운 아바타가 있었는지 — 없던 아바타를 지운 것은 이력에 남길 일이 아니다 */
+    public boolean remove(long memberId) {
+        return profiles.findById(memberId).map(profile -> {
             String previous = profile.clearAvatar(Instant.now().truncatedTo(ChronoUnit.MICROS));
-            if (previous != null) deleteAfter(true, previous);
-        });
+            if (previous == null) return false;
+            deleteAfter(true, previous);
+            return true;
+        }).orElse(false);
+    }
+
+    /**
+     * 남의 아바타를 올린다 — 전역 관리자만. 검증·저장·이전 오브젝트 정리는 본인 경로와 같은 규칙을 탄다.
+     *
+     * <p>이 경로가 필요한 이유는 AGENT 멤버다. 에이전트는 브라우저로 로그인하지 않으니 스스로
+     * {@code /api/org/me/avatar}를 부를 수 없고, 관리자가 대신 넣어 주지 않으면 목록에서 영영 얼굴이 없다.
+     */
+    public AvatarView uploadFor(long actorId, long memberId, MultipartFile file) {
+        permissions.requireGlobalAdmin(actorId);
+        AvatarView view = upload(memberId, file);
+        recordIfOnBehalf(actorId, memberId, MemberEventType.AVATAR_CHANGED, "관리자가 아바타를 올렸습니다");
+        return view;
+    }
+
+    /** 남의 아바타를 지운다 — 전역 관리자만. 아바타가 없어도 204(멱등), 멤버 자체가 없으면 404. */
+    public void removeFor(long actorId, long memberId) {
+        permissions.requireGlobalAdmin(actorId);
+        if (!members.existsById(memberId)) throw new NotFoundException("멤버를 찾을 수 없습니다");
+        if (remove(memberId)) {
+            recordIfOnBehalf(actorId, memberId, MemberEventType.AVATAR_REMOVED, "관리자가 아바타를 지웠습니다");
+        }
+    }
+
+    /** 남의 얼굴을 바꾼 것만 이력에 남긴다 — 자기 사진을 관리자 경로로 바꾼 것은 본인 경로와 다르지 않다. */
+    private void recordIfOnBehalf(long actorId, long memberId, MemberEventType type, String detail) {
+        if (actorId != memberId) events.member(memberId, type, actorId, detail);
     }
 
     @Transactional(readOnly = true)

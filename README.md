@@ -276,6 +276,8 @@ alm-backend `user_preference.avatar_key`에서 이관, ALM 쪽은 V21에서 제�
 |---|---|---|---|
 | `PUT` | `/api/org/me/avatar` (multipart `file`) | 인증(본인) | `200 { memberId, avatarUrl, updatedAt }` |
 | `DELETE` | `/api/org/me/avatar` | 인증(본인) | `204` |
+| `PUT` | `/api/org/members/{memberId}/avatar` (multipart `file`) | GLOBAL ADMIN | `200 { memberId, avatarUrl, updatedAt }` — 남의 얼굴을 대신 올린다 |
+| `DELETE` | `/api/org/members/{memberId}/avatar` | GLOBAL ADMIN | `204`(아바타가 없어도 `204`, 멤버가 없으면 `404 멤버를 찾을 수 없습니다`) |
 | `GET` | `/api/org/members/{memberId}/avatar` | 인증 | 바이트(원본 타입, `private, max-age=300`, `nosniff`), 없으면 `404` |
 | `GET` | `/api/org/me` | 인증(본인) | `{ id, displayName, email, avatarUrl, avatarUpdatedAt, … }` — U1에서 `status`·`kind`·`joinedVia`·`globalRoles`·`teams`가 더 붙었다(위 절) |
 | `GET` | `/api/org/members` | 인증 | 기존 항목에 `avatarUrl`·`avatarUpdatedAt`(둘 다 nullable) 추가 — 기존 필드 불변. 배열 그대로이고, 기본 필터만 `ACTIVE`·`HUMAN`으로 좁아졌다(위 절) |
@@ -306,8 +308,15 @@ dev 오프셋 클러스터는 MinIO 없이 뜬다). 다시 올리면 이전 오�
 | `ORG_S3_ACCESS_KEY` / `ORG_S3_SECRET_KEY` | (빈 값) | 자격증명 — 둘 다 주거나 둘 다 비운다 |
 | `ORG_MAX_AVATAR_MB` | `4` | 멀티파트 컨테이너 상한. 서비스 상한(2MB)보다 넉넉해야 사용자가 한국어 400을 본다 |
 
-> **알려진 갭 / 후속**: 관리자가 남의 아바타를 올리는 경로(`PUT /api/org/members/{id}/avatar`, ADMIN 전용)는
-> 아직 없다 — AGENT 멤버의 얼굴은 지금 넣을 수 없다. 저장소 코드(`profile/AvatarStorage` 3종)는
+**관리자 경로(`PUT`/`DELETE /api/org/members/{id}/avatar`)가 따로 있는 이유는 AGENT 멤버다.** 에이전트는
+브라우저로 로그인하지 않아 `/api/org/me/avatar`를 스스로 부를 수 없고, 관리자가 대신 넣어 주지 않으면
+목록에서 영영 얼굴이 없다. 검증(매직 바이트·2MB·SVG 거부)·저장·이전 오브젝트 정리는 본인 경로와 같은
+코드를 타고, 달라지는 것은 인가(전역 관리자, 아니면 `403 GLOBAL ADMIN 권한이 필요합니다`)와 이력뿐이다 —
+**남의 얼굴을 바꾼 것만** `member_event`에 `AVATAR_CHANGED`·`AVATAR_REMOVED`로 actor와 함께 남는다
+(자기 것을 이 경로로 바꾼 것은 본인 경로와 다르지 않으므로 남기지 않는다). 스키마 변경은 없다
+(`member_event.type`은 `VARCHAR(32)`).
+
+> **알려진 갭 / 후속**: 저장소 코드(`profile/AvatarStorage` 3종)는
 > alm-backend `attachment/AttachmentStorage`의 최소 복제다. 쓰는 곳이 둘뿐이라 common-starter로
 > 끌어올리지 않았다(AWS SDK 의존이 리소스 서버 다섯 곳 전부에 붙는다). 세 번째 소비자가 생기면 그때 옮긴다.
 
@@ -319,14 +328,14 @@ org-service의 REST 계약을 코드에서 뽑아 OpenAPI 3.1 JSON으로 낸다.
 |---|---|
 | 경로 | `GET /v3/api-docs` — `SecurityFilterChain`에서 permitAll(토큰 불필요) |
 | 노출 범위 | 게이트웨이·nginx가 `/v3`를 라우팅하지 않는다 → **클러스터 내부 전용** |
-| 담기는 것 | `/api/org/**` 31개 오퍼레이션, 태그 6개(Members · Teams · Grants · Invitations · Me · Avatars) |
+| 담기는 것 | `/api/org/**` 33개 오퍼레이션, 태그 6개(Members · Teams · Grants · Invitations · Me · Avatars) |
 | 안 담기는 것 | `/internal/org/**`(`springdoc.paths-to-match` + `@Hidden`), 액추에이터, gRPC `PermissionService`(REST가 아니다) |
 
 주석 규약: 컨트롤러에 `@Tag`, 엔드포인트마다 `@Operation(summary)`, 뜻이 안 드러나는 파라미터에 `@Parameter`, DTO 핵심 필드에 `@Schema(description, example)` — 전부 한국어 한 줄.
 
 공통 오류는 `config/OpenApiConfig`의 `OperationCustomizer`가 붙인다: 401·403은 모든 오퍼레이션에, 404는 경로 변수를 받는 오퍼레이션에, 400은 본문을 받는 오퍼레이션에. 사유가 제각각인 409만 `@ConflictResponse("사유")`를 붙인 곳에 그 사유로 들어간다. 응답 스키마는 common-starter의 `{"error": 메시지}` 계약(`PlatformError`)이다.
 
-> **400은 "본문을 받는 오퍼레이션" 규칙이지 완전한 목록이 아니다.** 엄밀히 따지면 모든 컨트롤러가 `Long.parseLong(jwt.getSubject())`로 호출자를 푼다 — `NumberFormatException`은 `IllegalArgumentException`이라 common-starter가 400으로 매핑하므로, 31개 오퍼레이션 전부가 이론상 400을 낼 수 있다. 그걸 다 적으면 아무 정보도 주지 않으므로, **읽는 사람이 잘못된 값을 보내서 실제로 400을 만들 수 있는 자리**에만 적는다. wiki·alm도 같은 규칙을 쓴다(2026-09-05 합의).
+> **400은 "본문을 받는 오퍼레이션" 규칙이지 완전한 목록이 아니다.** 엄밀히 따지면 모든 컨트롤러가 `Long.parseLong(jwt.getSubject())`로 호출자를 푼다 — `NumberFormatException`은 `IllegalArgumentException`이라 common-starter가 400으로 매핑하므로, 33개 오퍼레이션 전부가 이론상 400을 낼 수 있다. 그걸 다 적으면 아무 정보도 주지 않으므로, **읽는 사람이 잘못된 값을 보내서 실제로 400을 만들 수 있는 자리**에만 적는다. wiki·alm도 같은 규칙을 쓴다(2026-09-05 합의).
 
 `springdoc.override-with-generic-response: false`인 이유: 켜 두면 `@RestControllerAdvice`가 다루는 예외가 전부 모든 오퍼레이션의 응답으로 복사돼, 목록 조회에도 404·409·503이 붙는다. 그러면 "이 엔드포인트가 실제로 내는 코드"라는 뜻이 사라진다.
 

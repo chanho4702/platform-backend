@@ -22,10 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 아바타. 올리고 지우는 것은 본인만이고(경로에 멤버 id가 없다), 보는 것은 로그인한 누구나다 —
+ * 아바타. 자기 얼굴은 본인이 올리고 지우며({@code /me}), 보는 것은 로그인한 누구나다 —
  * ALM 담당자 셀, 위키 작성자, 코멘트에 같은 조직 사람들의 얼굴이 떠야 하기 때문이다.
+ * 남의 얼굴을 올리고 지우는 {@code /members/{id}} 경로는 전역 관리자만 — 브라우저로 로그인하지 않는
+ * AGENT 멤버의 얼굴은 이 경로로만 들어온다.
  */
-@Tag(name = "Avatars", description = "아바타 이미지 — 올리고 지우는 것은 본인만, 보는 것은 로그인한 누구나.")
+@Tag(name = "Avatars", description = "아바타 이미지 — 본인 것은 본인이, 남의 것은 전역 관리자가. 보는 것은 로그인한 누구나.")
 @RestController
 @RequiredArgsConstructor
 public class AvatarController {
@@ -43,6 +45,22 @@ public class AvatarController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void remove(@AuthenticationPrincipal Jwt jwt) {
         avatars.remove(memberId(jwt));
+    }
+
+    @Operation(summary = "멤버 아바타 업로드(관리자) — multipart/form-data. 전역 관리자만, 2MB를 넘으면 400")
+    @PutMapping("/api/org/members/{memberId}/avatar")
+    public AvatarView uploadFor(@Parameter(description = "대상 멤버 id") @PathVariable long memberId,
+                                @RequestParam("file") MultipartFile file,
+                                @AuthenticationPrincipal Jwt jwt) {
+        return avatars.uploadFor(memberId(jwt), memberId, file);
+    }
+
+    @Operation(summary = "멤버 아바타 삭제(관리자) — 전역 관리자만")
+    @DeleteMapping("/api/org/members/{memberId}/avatar")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeFor(@Parameter(description = "대상 멤버 id") @PathVariable long memberId,
+                          @AuthenticationPrincipal Jwt jwt) {
+        avatars.removeFor(memberId(jwt), memberId);
     }
 
     /**
