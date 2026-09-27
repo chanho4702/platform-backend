@@ -1,9 +1,19 @@
 package com.platform.orgservice.member;
 
 import com.platform.orgservice.domain.Member;
+import com.platform.orgservice.domain.MemberEvent;
+import com.platform.orgservice.domain.MemberEventType;
+import com.platform.orgservice.domain.MemberStatus;
+import com.platform.orgservice.repository.MemberEventRepository;
 import com.platform.orgservice.repository.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.data.domain.Limit;
+
+import java.time.Instant;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -28,6 +38,7 @@ class AgentMemberControllerTest {
 
     @Autowired WebApplicationContext context;
     @Autowired MemberRepository members;
+    @Autowired MemberEventRepository memberEvents;
     MockMvc mvc;
 
     static final long ADMIN_ID = 900L;
@@ -36,6 +47,7 @@ class AgentMemberControllerTest {
     @BeforeEach
     void setup() {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+        memberEvents.deleteAll();
         members.deleteAll();
         // U1부터 처음 보는 사용자는 PENDING으로 격리된다 — 등록 호출자는 활성 사용자여야 한다
         active(members, ADMIN_ID, "Admin");
@@ -64,6 +76,57 @@ class AgentMemberControllerTest {
 
         assertThat(members.findById(AGENT_ID)).isPresent();
         assertThat(members.findById(AGENT_ID).get().getDisplayName()).isEqualTo("지호2");
+    }
+
+    /** 신규 등록은 처음부터 ACTIVE이고 상태 이력을 남기지 않는다(회귀). */
+    @Test
+    void new_agent_is_active_without_event() throws Exception {
+        mvc.perform(post("/api/org/members/agents").with(asAdmin(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":" + AGENT_ID + ",\"displayName\":\"지호\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+
+        assertThat(memberEvents.findByMember(AGENT_ID, Limit.of(10))).isEmpty();
+    }
+
+    /** 정지·비활성된 에이전트 멤버를 관리자가 재등록하면 ACTIVE로 되돌리고 REACTIVATED 이력을 남긴다. */
+    @ParameterizedTest
+    @EnumSource(value = MemberStatus.class, names = {"SUSPENDED", "DEACTIVATED"})
+    void re_register_normalizes_inactive_agent_to_active(MemberStatus from) throws Exception {
+        Member agent = Member.agentOf(AGENT_ID, "지호", "jiho@platform.local");
+        if (from == MemberStatus.SUSPENDED) agent.suspend(Instant.now());
+        else agent.deactivate(Instant.now());
+        members.save(agent);
+
+        mvc.perform(post("/api/org/members/agents").with(asAdmin(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":" + AGENT_ID + ",\"displayName\":\"지호\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+
+        Member reloaded = members.findById(AGENT_ID).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+        assertThat(reloaded.getSuspendedAt()).isNull();
+        assertThat(reloaded.getDeactivatedAt()).isNull();
+
+        List<MemberEvent> events = memberEvents.findByMember(AGENT_ID, Limit.of(10));
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).getType()).isEqualTo(MemberEventType.REACTIVATED);
+        assertThat(events.get(0).getActorId()).isEqualTo(ADMIN_ID);
+    }
+
+    /** 같은 id로 먼저 JIT 미러링돼 PENDING·HUMAN으로 남은 행도 등록 시 AGENT·ACTIVE로 맞춘다. */
+    @Test
+    void re_register_normalizes_pending_mirror_row() throws Exception {
+        members.save(Member.joining(AGENT_ID, "agent:jiho", null));
+
+        mvc.perform(post("/api/org/members/agents").with(asAdmin(ADMIN_ID, "Admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":" + AGENT_ID + ",\"displayName\":\"지호\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("AGENT"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
 
     @Test

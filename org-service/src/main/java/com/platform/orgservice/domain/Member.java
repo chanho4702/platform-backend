@@ -101,11 +101,24 @@ public class Member {
         if (email != null) this.email = email;
     }
 
-    /** 에이전트 등록 재호출 — 이름/이메일 갱신 + kind=AGENT 유지(사람 mirror가 덮어써도 되돌린다는 뜻은 아님). */
-    public void refreshAsAgent(String displayName, String email) {
+    /**
+     * 에이전트 등록 재호출 — 이름/이메일 갱신 + kind=AGENT + status=ACTIVE({@link #agentOf}와 대칭).
+     *
+     * <p>이 경로는 전역 관리자가 페르소나를 명시적으로 (재)등록할 때만 탄다. 여기서 정지·비활성을 남겨 두면
+     * 등록은 성공으로 끝나는데 CheckPermission이 모든 요청을 상태로 거부해, 쓸 수 없는 페르소나가 조용히
+     * 만들어진다. 에이전트에는 Keycloak 계정·초대 이력이 없으므로 "비활성은 재초대로만" 규칙의 전제도 없다.
+     *
+     * @return 이번 호출이 비활성 상태를 풀었는가(이력을 남길지 판단용)
+     */
+    public boolean refreshAsAgent(String displayName, String email) {
         if (displayName != null) this.displayName = displayName;
         if (email != null) this.email = email;
         this.kind = MemberKind.AGENT;
+        if (this.status == MemberStatus.ACTIVE) return false;
+        this.status = MemberStatus.ACTIVE;
+        this.suspendedAt = null;
+        this.deactivatedAt = null;
+        return true;
     }
 
     /** 초대 소진 — PENDING이 아니어도 멱등하게 활성으로 둔다(이미 활성인 사람에게 초대가 도착할 수 있다). */

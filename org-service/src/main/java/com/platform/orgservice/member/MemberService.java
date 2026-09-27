@@ -106,11 +106,18 @@ public class MemberService {
                 "부트스트랩 관리자 자동 활성화(PLATFORM_BOOTSTRAP_ADMIN_ID)");
     }
 
-    /** 에이전트 멤버 등록(upsert) — 존재하면 이름/이메일 갱신 + kind=AGENT 유지, 없으면 새로 생성. */
+    /** 에이전트 멤버 등록(upsert) — 존재하면 이름/이메일 갱신 + kind=AGENT·status=ACTIVE로 맞추고, 없으면 새로 생성. */
     @Transactional
-    public Member registerAgent(long id, String displayName, String email) {
+    public Member registerAgent(long actorId, long id, String displayName, String email) {
         return members.findById(id)
-                .map(m -> { m.refreshAsAgent(displayName, email); return m; })
+                .map(m -> {
+                    MemberStatus before = m.getStatus();
+                    if (m.refreshAsAgent(displayName, email)) {
+                        events.member(id, MemberEventType.REACTIVATED, actorId,
+                                "에이전트 재등록으로 활성화(" + before.name() + " → ACTIVE)");
+                    }
+                    return m;
+                })
                 .orElseGet(() -> members.save(Member.agentOf(id, displayName, email)));
     }
 }

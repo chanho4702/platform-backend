@@ -7,6 +7,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,8 +29,8 @@ public class AgentMemberController {
     @Operation(summary = "에이전트 페르소나를 멤버로 등록 — 전역 관리자 전용")
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public MemberResponse register(@Valid @RequestBody AgentRegisterRequest req) {
-        var member = members.registerAgent(req.id(), req.displayName(), req.email());
+    public MemberResponse register(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AgentRegisterRequest req) {
+        var member = members.registerAgent(Long.parseLong(jwt.getSubject()), req.id(), req.displayName(), req.email());
         return MemberResponse.from(member);
     }
 }
