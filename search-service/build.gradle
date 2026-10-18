@@ -20,7 +20,6 @@ dependencyManagement {
     }
 }
 
-def grpcVersion = '1.69.0'
 // OpenSearch 클라이언트 — 엔진은 Apache 2.0 OpenSearch 2.x (기획 확정).
 // ES 클라이언트가 아니라 opensearch-java를 쓴다: ES 8 클라이언트는 헤더 검사로 OpenSearch 접속을 거부한다.
 def openSearchVersion = '2.19.0'
@@ -40,7 +39,7 @@ dependencies {
     // health·info 노출 — 헬스 집계가 다른 서비스에 요구하는 것과 같은 계약(build.version 포함).
     // 그전까지는 actuator가 없어 HealthCatalog가 루트(/) 폴백으로 살아있음만 봤고 버전 열이 비었다.
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    implementation "io.grpc:grpc-netty-shaded:${grpcVersion}"
+    implementation libs.grpc.netty.shaded
     implementation "org.opensearch.client:opensearch-java:${openSearchVersion}"
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     compileOnly 'org.projectlombok:lombok:1.18.46'
@@ -48,7 +47,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.graphql:spring-graphql-test'
     testImplementation 'org.springframework.security:spring-security-test'
-    testImplementation "io.grpc:grpc-inprocess:${grpcVersion}"
+    testImplementation libs.grpc.inprocess
     // 색인·소비 경로는 페이크로 검증하면 안 된다 — wiki-backend의 RedisStreamEventPublisher가
     // 어떤 테스트도 실행한 적 없어 12일간 이벤트가 유실됐던 사고(08-02)의 재발 방지.
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'

@@ -15,7 +15,6 @@ dependencyManagement {
     imports { mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}" }
 }
 
-def grpcVersion = '1.69.0'
 
 dependencies {
     implementation project(':common-proto')
@@ -38,8 +37,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-flyway'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
-    implementation "io.grpc:grpc-netty-shaded:${grpcVersion}"
-    implementation "io.grpc:grpc-services:${grpcVersion}"   // 리플렉션(grpcurl 디버깅용)
+    implementation libs.grpc.netty.shaded
+    implementation libs.grpc.services   // 리플렉션(grpcurl 디버깅용)
     // 관리자 통계 60초 캐시 — 대시보드를 여럿이 봐도 질의는 분당 한 묶음이다
     implementation 'com.github.ben-manes.caffeine:caffeine'
     // 아바타 바이트 저장소(MinIO/S3 호환). 기본은 로컬 파일이라 dev에서는 쓰이지 않는다
@@ -51,7 +50,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-data-jpa-test'
     testImplementation 'org.springframework.security:spring-security-test'
-    testImplementation "io.grpc:grpc-inprocess:${grpcVersion}"
+    testImplementation libs.grpc.inprocess
     testRuntimeOnly 'com.h2database:h2'
 }
 // /actuator/info의 build.version — 게이트웨이 상태판이 서비스 버전을 여기서 읽는다
