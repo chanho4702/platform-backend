@@ -34,6 +34,23 @@ public class MemberService {
     }
 
     /**
+     * 읽기 전용 빠른 경로(P-22) — 요청마다 쓰기 트랜잭션을 열지 않는다.
+     *
+     * <p>이미 있는 멤버이고, 승인 대기가 아니며(초대 소진·부트스트랩 판정은 쓰기 경로에서만), 이름·이메일이
+     * 그대로면 쓸 것이 없다 — 그 경우의 판정을 읽기 전용 트랜잭션으로 돌려준다. 하나라도 아니면 빈 값이고,
+     * 호출자는 {@link #mirror}(쓰기 경로)로 간다. 대부분의 요청은 이 경로에서 끝난다.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<MirrorResult> mirrorIfUnchanged(long id, String displayName, String email) {
+        Member member = members.findById(id).orElse(null);
+        if (member == null || member.getStatus() == MemberStatus.PENDING) return java.util.Optional.empty();
+        if (member.getKind() != MemberKind.AGENT && member.needsRefresh(displayName, email)) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(resultOf(member.getStatus()));
+    }
+
+    /**
      * JIT 미러링 upsert + 초대 소진.
      *
      * <p>처음 보는 사람은 <b>PENDING으로</b> 만든다 — 초대 없이 들어온 계정이 곧바로 아무 데나
@@ -72,7 +89,11 @@ public class MemberService {
                 invitations.consumeOnLogin(member, provider);
             }
         }
-        return switch (member.getStatus()) {
+        return resultOf(member.getStatus());
+    }
+
+    private static MirrorResult resultOf(MemberStatus status) {
+        return switch (status) {
             case PENDING -> new MirrorResult(true, "승인 대기 중인 계정입니다");
             case SUSPENDED -> new MirrorResult(true, "정지된 계정입니다");
             case DEACTIVATED -> new MirrorResult(true, "비활성된 계정입니다");

@@ -95,6 +95,12 @@ public class Member {
         return m;
     }
 
+    /** 미러링이 쓸 것이 있는가 — 클레임 값이 있고 저장값과 다를 때만. null 클레임은 "모름"이라 덮지 않는다. */
+    public boolean needsRefresh(String displayName, String email) {
+        return (displayName != null && !displayName.equals(this.displayName))
+                || (email != null && !email.equals(this.email));
+    }
+
     /** JIT 미러링 — 클레임이 바뀐 경우만 갱신. */
     public void refresh(String displayName, String email) {
         if (displayName != null) this.displayName = displayName;

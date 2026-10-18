@@ -50,10 +50,12 @@ public class MemberMirrorFilter extends OncePerRequestFilter {
                 chain.doFilter(request, response);
                 return;
             }
-            MemberService.MirrorResult result = members.mirror(id,
-                    jwtAuth.getToken().getClaimAsString("name"),
-                    jwtAuth.getToken().getClaimAsString("email"),
-                    jwtAuth.getToken().getClaimAsString("provider"));
+            String name = jwtAuth.getToken().getClaimAsString("name");
+            String email = jwtAuth.getToken().getClaimAsString("email");
+            // 대부분의 요청은 바뀐 것이 없다 — 읽기 전용으로 판정하고, 쓸 것이 있을 때만 쓰기 트랜잭션(P-22)
+            MemberService.MirrorResult result = members.mirrorIfUnchanged(id, name, email)
+                    .orElseGet(() -> members.mirror(id, name, email,
+                            jwtAuth.getToken().getClaimAsString("provider")));
             if (result.blocked() && !isSelfPath(request)) {
                 deny(response, result.reason());
                 return;
