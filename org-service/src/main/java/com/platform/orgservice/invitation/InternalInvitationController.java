@@ -18,7 +18,7 @@ import java.time.Instant;
 
 /**
  * 서비스 간 전용(auth-server → org-service). 게이트웨이는 {@code /internal/**}을 라우팅하지 않고,
- * {@link com.platform.orgservice.security.InternalTokenFilter}가 {@code X-Internal-Token}을 검사한다.
+ * {@link com.platform.common.security.InternalTokenFilter}가 {@code X-Internal-Token}을 검사한다.
  *
  * <p>여기에 사용자 JWT는 오지 않는다 — 초대 확인·수락은 <b>로그인 도중</b>에 일어나므로
  * 아직 우리 토큰이 없다. 그래서 이 두 개만 따로 열고, 나머지 초대 API는 전부 사용자 인증 경로에 둔다.

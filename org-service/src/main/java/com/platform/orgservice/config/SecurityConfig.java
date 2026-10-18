@@ -1,6 +1,7 @@
 package com.platform.orgservice.config;
 
-import com.platform.orgservice.security.InternalTokenFilter;
+import com.platform.common.security.InternalTokenFilter;
+import com.platform.common.security.PlatformSecurityErrorHandlers;
 import com.platform.orgservice.security.MemberMirrorFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -27,7 +28,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     /**
-     * 서비스 간 전용 경로. 사용자 JWT가 아니라 {@link InternalTokenFilter}가 인증을 전담한다 —
+     * 서비스 간 전용 경로. 사용자 JWT가 아니라 {@link InternalTokenFilter}(common-starter 단일 구현, P-07 —
+     * 헤더·설정값 trim, 상수시간 비교, 미설정이면 fail-closed)가 인증을 전담한다 —
      * 초대 확인·수락은 로그인 <b>도중</b>에 일어나 아직 우리 토큰이 없기 때문이다.
      * 게이트웨이는 이 경로를 라우팅하지 않는다(클러스터 내부 전용).
      *
@@ -68,7 +70,14 @@ public class SecurityConfig {
                         // 게이트웨이가 상태판을 그리려고 토큰 없이 부르고, 나머지 /actuator/**는 애초에 노출하지 않는다.
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
+                // 401/403에도 플랫폼 본문 {"error"}를 싣는다(P-11). Security 기본은 본문이 없다.
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(converter))
+                        .authenticationEntryPoint(PlatformSecurityErrorHandlers.authenticationEntryPoint())
+                        .accessDeniedHandler(PlatformSecurityErrorHandlers.accessDeniedHandler()))
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(PlatformSecurityErrorHandlers.authenticationEntryPoint())
+                        .accessDeniedHandler(PlatformSecurityErrorHandlers.accessDeniedHandler()))
                 .addFilterAfter(memberMirrorFilter, AuthorizationFilter.class);
         return http.build();
     }

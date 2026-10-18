@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 서비스 간 전용(agent-service → org-service) 에이전트 멤버 등록. 권한 판정은 호출측이 끝낸 뒤 온다 —
- * 여기는 {@link com.platform.orgservice.security.InternalTokenFilter}의 {@code X-Internal-Token}만 본다.
+ * 여기는 {@link com.platform.common.security.InternalTokenFilter}의 {@code X-Internal-Token}만 본다.
  *
  * <p>사용자 JWT가 없으므로 REACTIVATED 이력의 행위자는 본문의 {@code actorId}(호출측이 넣은 원 사용자 id)다.
  * 응답 shape은 {@code POST /api/org/members/agents}와 같다.

@@ -10,7 +10,7 @@ import com.platform.orgservice.repository.MemberEventRepository;
 import com.platform.orgservice.repository.MemberRepository;
 import com.platform.orgservice.repository.TeamMemberRepository;
 import com.platform.orgservice.repository.TeamRepository;
-import com.platform.orgservice.security.InternalTokenFilter;
+import com.platform.common.security.InternalTokenFilter;
 import com.platform.orgservice.team.EveryoneTeamService;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeEach;

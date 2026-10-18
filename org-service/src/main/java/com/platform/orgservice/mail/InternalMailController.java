@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 서비스 간 전용(wiki·alm → org-service). 게이트웨이는 {@code /internal/**}을 라우팅하지 않고,
- * {@link com.platform.orgservice.security.InternalTokenFilter}가 {@code X-Internal-Token}을 검사한다.
+ * {@link com.platform.common.security.InternalTokenFilter}가 {@code X-Internal-Token}을 검사한다.
  *
  * <p>발송은 플랫폼에서 한 곳(여기)에서만 한다 — 설정·자격증명·재시도·로그가 서비스마다 갈라지면
  * "메일이 안 갔다"를 어디서 봐야 하는지부터 달라진다. <b>수신자 결정은 여전히 호출측</b>이다:

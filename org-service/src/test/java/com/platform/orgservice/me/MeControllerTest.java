@@ -39,7 +39,9 @@ class MeControllerTest {
 
     @Test
     void 무토큰은_401() throws Exception {
-        mvc.perform(get("/api/org/me/permissions")).andExpect(status().isUnauthorized());
+        // 401에도 플랫폼 오류 본문을 싣는다(P-11) — Security 기본은 본문이 비어 프론트가 문구를 못 띄웠다
+        mvc.perform(get("/api/org/me/permissions")).andExpect(status().isUnauthorized())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.error").value("로그인이 필요합니다"));
     }
 
     @Test
