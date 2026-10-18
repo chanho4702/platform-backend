@@ -28,8 +28,9 @@ public class PlatformErrorController implements ErrorController {
 
     private static final Logger log = LoggerFactory.getLogger(PlatformErrorController.class);
 
-    @RequestMapping(value = "${spring.web.error.path:${error.path:/error}}",
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    // produces를 걸지 않는다 — 걸면 Accept: application/xml 같은 요청(바로 그 406 오류)에서 이 매핑이 선택되지 않는다.
+    // 응답 Content-Type만 JSON으로 고정한다.
+    @RequestMapping("${spring.web.error.path:${error.path:/error}}")
     public ResponseEntity<Map<String, String>> error(HttpServletRequest request) {
         int status = statusOf(request);
         Object reason = request.getAttribute(RequestDispatcher.ERROR_MESSAGE);

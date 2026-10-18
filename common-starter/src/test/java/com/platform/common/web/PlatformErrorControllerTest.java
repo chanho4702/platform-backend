@@ -73,4 +73,15 @@ class PlatformErrorControllerTest {
                 .andExpect(status().is(413))
                 .andExpect(jsonPath("$.error").value("첨부는 20MB까지입니다"));
     }
+
+    /** Codex P2 — 클라이언트가 JSON을 받지 않겠다고 해도(406 경로 등) 이 컨트롤러가 선택되고 본문은 JSON이다. */
+    @Test
+    void JSON이_아닌_Accept여도_플랫폼_컨트롤러가_답한다() throws Exception {
+        mvc.perform(get("/error").with(jwt()).accept(org.springframework.http.MediaType.APPLICATION_XML)
+                        .requestAttr(RequestDispatcher.ERROR_STATUS_CODE, 406))
+                .andExpect(status().isNotAcceptable())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .contentTypeCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.error").value("지원하지 않는 응답 형식입니다"));
+    }
 }
