@@ -51,4 +51,39 @@ class StarterContractTest {
         mvc.perform(post("/probe/valid").with(jwt()).contentType(MediaType.APPLICATION_JSON).content("{bad json"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("요청 값이 올바르지 않습니다"));
     }
+
+    /** P-11: 라이브러리 발 IAE 원문(클래스명·"For input string")은 사용자에게 가지 않는다. 서비스가 쓴 한국어 문구는 그대로. */
+    @Test
+    void 라이브러리_IAE_원문은_고정_문구로_바뀐다() throws Exception {
+        mvc.perform(get("/probe/library-iae").with(jwt())).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("요청 값이 올바르지 않습니다"));
+        mvc.perform(get("/probe/number-format").with(jwt())).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("요청 값이 올바르지 않습니다"));
+    }
+
+    @Test
+    void BadRequestException은_서비스가_고른_문구를_그대로_싣는다() throws Exception {
+        mvc.perform(get("/probe/bad-request").with(jwt())).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Title too long"));
+    }
+
+    @Test
+    void 타입_불일치와_파라미터_누락은_400_계약이다() throws Exception {
+        mvc.perform(get("/probe/items/abc").with(jwt())).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("요청 값의 형식이 올바르지 않습니다"));
+        mvc.perform(get("/probe/param").with(jwt())).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("필수 요청 값이 빠졌습니다"));
+    }
+
+    @Test
+    void 낙관적_락_실패는_409_계약이다() throws Exception {
+        mvc.perform(get("/probe/locked").with(jwt())).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("다른 사용자가 먼저 수정했습니다. 새로고침 후 다시 시도해 주세요"));
+    }
+
+    @Test
+    void AccessDenied는_403_계약이다() throws Exception {
+        mvc.perform(get("/probe/denied").with(jwt())).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("권한이 없습니다"));
+    }
 }

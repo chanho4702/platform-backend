@@ -16,6 +16,11 @@ dependencies {
     compileOnly 'org.springframework.boot:spring-boot-starter-web'
     compileOnly 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
     compileOnly 'org.springframework.boot:spring-boot-starter-validation'
+    // 낙관적 락 실패(org.springframework.dao) → 409. JPA를 안 쓰는 서비스도 있어 조건부 등록한다.
+    compileOnly 'org.springframework:spring-tx'
+    // 서비스 간 gRPC 인증 인터셉터(P-01). gRPC가 classpath에 있는 서비스에서만 자동 구성이 켜진다.
+    compileOnly platform(libs.grpc.bom)
+    compileOnly libs.grpc.api
 
     testImplementation platform("org.springframework.boot:spring-boot-dependencies:${bootVersion}")
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -23,6 +28,10 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
     testImplementation 'org.springframework.boot:spring-boot-starter-validation'
     testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.springframework:spring-tx'
+    testImplementation 'org.springframework:spring-orm'
+    testImplementation project(':common-proto')
+    testImplementation libs.grpc.inprocess
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
