@@ -33,6 +33,9 @@ public class AuthAccountClient {
     public enum Result { APPLIED, USER_NOT_FOUND, FAILED, NOT_CONFIGURED }
 
     private static final String HEADER = "X-Internal-Token";
+    /** auth-server InternalUserStatusController의 404 본문 {@code "code":"user_not_found"}와 맞춘 계약. */
+    private static final java.util.regex.Pattern USER_NOT_FOUND_CODE =
+            java.util.regex.Pattern.compile("\"code\"\\s*:\\s*\"user_not_found\"");
 
     private final String baseUri;
     private final String token;
@@ -72,7 +75,11 @@ public class AuthAccountClient {
             return Result.APPLIED;
         } catch (RestClientResponseException e) {
             HttpStatusCode status = e.getStatusCode();
-            if (status.value() == 404) return Result.USER_NOT_FOUND;
+            // auth-server가 "사용자 없음"을 식별 코드로 밝힌 404만 완료로 친다. 코드 없는 404(엔드포인트 미배포·라우팅·
+            // 프록시)를 완료로 읽으면 반영 기록이 맞춰져 영영 다시 보내지 않는다 — 그건 실패(재시도)다.
+            if (status.value() == 404 && USER_NOT_FOUND_CODE.matcher(e.getResponseBodyAsString()).find()) {
+                return Result.USER_NOT_FOUND;
+            }
             log.warn("auth-server 계정 상태 반영 실패: user={} active={} status={}", userId, active, status.value());
             return Result.FAILED;
         } catch (RestClientException e) {

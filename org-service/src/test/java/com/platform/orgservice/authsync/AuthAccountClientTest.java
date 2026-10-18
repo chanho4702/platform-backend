@@ -22,6 +22,7 @@ class AuthAccountClientTest {
     final AtomicReference<String> token = new AtomicReference<>();
     final AtomicReference<String> body = new AtomicReference<>();
     final AtomicInteger status = new AtomicInteger(204);
+    final AtomicReference<String> responseBody = new AtomicReference<>(null);
 
     @BeforeEach
     void start() throws IOException {
@@ -31,7 +32,15 @@ class AuthAccountClientTest {
             path.set(ex.getRequestURI().getPath());
             token.set(ex.getRequestHeaders().getFirst("X-Internal-Token"));
             body.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            ex.sendResponseHeaders(status.get(), -1);
+            String rb = responseBody.get();
+            if (rb == null) {
+                ex.sendResponseHeaders(status.get(), -1);
+            } else {
+                byte[] bytes = rb.getBytes(StandardCharsets.UTF_8);
+                ex.getResponseHeaders().add("Content-Type", "application/json");
+                ex.sendResponseHeaders(status.get(), bytes.length);
+                ex.getResponseBody().write(bytes);
+            }
             ex.close();
         });
         server.start();
@@ -62,10 +71,29 @@ class AuthAccountClientTest {
     void 사용자_없음과_실패를_구분한다() {
         AuthAccountClient client = new AuthAccountClient(base(), "", "tok");
         status.set(404);
+        responseBody.set("{\"error\":\"사용자를 찾을 수 없습니다\",\"code\":\"user_not_found\"}");
         assertThat(client.setActive(1L, false)).isEqualTo(AuthAccountClient.Result.USER_NOT_FOUND);
+        responseBody.set("{\n  \"code\" :\t\"user_not_found\"\n}"); // 공백·줄바꿈이 섞인 JSON도
+        assertThat(client.setActive(1L, false)).isEqualTo(AuthAccountClient.Result.USER_NOT_FOUND);
+        responseBody.set(null);
         status.set(403);
         assertThat(client.setActive(1L, false)).isEqualTo(AuthAccountClient.Result.FAILED);
         status.set(503);
+        assertThat(client.setActive(1L, false)).isEqualTo(AuthAccountClient.Result.FAILED);
+    }
+
+    /**
+     * Codex P1 — 식별 코드 없는 404(엔드포인트 미배포·라우팅 오류·프록시)를 "사용자 없음"으로 읽으면 동기화 완료로
+     * 기록돼 영영 다시 보내지 않는다. 그런 404는 실패(재시도)다.
+     */
+    @Test
+    void 식별_코드_없는_404는_사용자_없음이_아니라_실패다() {
+        AuthAccountClient client = new AuthAccountClient(base(), "", "tok");
+        status.set(404);
+        assertThat(client.setActive(1L, false)).isEqualTo(AuthAccountClient.Result.FAILED);
+        responseBody.set("{\"timestamp\":\"x\",\"status\":404,\"error\":\"Not Found\",\"path\":\"/internal/users/1/status\"}");
+        assertThat(client.setActive(1L, false)).isEqualTo(AuthAccountClient.Result.FAILED);
+        responseBody.set("<html>404 Not Found</html>");
         assertThat(client.setActive(1L, false)).isEqualTo(AuthAccountClient.Result.FAILED);
     }
 
