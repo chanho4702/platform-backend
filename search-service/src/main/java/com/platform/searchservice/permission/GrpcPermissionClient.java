@@ -8,11 +8,10 @@ import com.platform.proto.org.v1.ListUserGrantsResponse;
 import com.platform.proto.org.v1.PermissionServiceGrpc;
 import com.platform.proto.org.v1.ResourceType;
 import com.platform.common.error.ServiceUnavailableException;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -23,20 +22,31 @@ import java.util.stream.Collectors;
  *
  * 캐시를 두지 않는다: 검색은 wiki-backend의 페이지 조회처럼 초당 여러 번 오는 호출이 아니고,
  * 권한 회수가 검색 결과에 늦게 반영되는 쪽이 더 나쁘다. 부하가 실측되면 그때 짧은 TTL을 붙인다.
+ *
+ * <p>모든 호출에 데드라인을 건다(P-04, wiki·alm과 같은 {@code platform.org-grpc.deadline-seconds}).
+ * 없으면 org가 행(hang)할 때 검색 요청 스레드가 무기한 묶여 톰캣 풀 전체가 굳는다.
+ * {@code withDeadlineAfter}는 호출 시점 기준 절대 시각을 계산하므로 스텁을 미리 만들어 두지 않고 매 호출 새로 만든다.
  */
 @Slf4j
 public class GrpcPermissionClient implements PermissionClient {
 
     private final PermissionServiceGrpc.PermissionServiceBlockingStub stub;
+    private final long deadlineSeconds;
 
-    public GrpcPermissionClient(PermissionServiceGrpc.PermissionServiceBlockingStub stub) {
+    public GrpcPermissionClient(PermissionServiceGrpc.PermissionServiceBlockingStub stub, long deadlineSeconds) {
+        if (deadlineSeconds <= 0) throw new IllegalArgumentException("deadlineSeconds must be positive");
         this.stub = stub;
+        this.deadlineSeconds = deadlineSeconds;
+    }
+
+    private PermissionServiceGrpc.PermissionServiceBlockingStub deadline() {
+        return stub.withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS);
     }
 
     @Override
     public AccessScope accessibleSpaces(long userId) {
         try {
-            ListUserGrantsResponse res = stub.listUserGrants(
+            ListUserGrantsResponse res = deadline().listUserGrants(
                     ListUserGrantsRequest.newBuilder().setUserId(userId).build()); // UNSPECIFIED = 전체
             boolean global = res.getGrantsList().stream()
                     .anyMatch(g -> g.getResourceType() == ResourceType.GLOBAL);
@@ -61,7 +71,7 @@ public class GrpcPermissionClient implements PermissionClient {
     public boolean isGlobalAdmin(long userId) {
         try {
             // org.proto가 이미 가진 계약 그대로다 — GLOBAL이면 resource_id는 빈 값으로 정규화된다.
-            CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
+            CheckPermissionResponse res = deadline().checkPermission(CheckPermissionRequest.newBuilder()
                     .setUserId(userId)
                     .setResourceType(ResourceType.GLOBAL)
                     .setResourceId("")
@@ -82,14 +92,5 @@ public class GrpcPermissionClient implements PermissionClient {
             log.warn("SPACE grant의 resourceId가 숫자가 아니다 — 건너뜀: {}", raw);
             return null;
         }
-    }
-
-    @SuppressWarnings("unused") // 진단용 — 전송 장애와 그 외를 로그에서 구분할 때 쓴다
-    private static boolean isUnavailable(Throwable e) {
-        if (e instanceof StatusRuntimeException sre) {
-            Status.Code code = sre.getStatus().getCode();
-            return code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED;
-        }
-        return false;
     }
 }

@@ -295,7 +295,11 @@ public class RedisStreamEventConsumer {
     private void moveToDlqAndAck(ByteRecord record, long deliveryCount, Exception failure) {
         byte[] payload = payload(record);
         byte[] originalPayload = payload == null ? new byte[0] : payload;
-        String raw = failure.getClass().getSimpleName() + ": " + failure.getMessage();
+        // 사용자용 예외 문구는 고정 문구라(P-18) 원인(gRPC 상태 등)을 뿌리 원인에서 덧붙인다 — DLQ는 운영자가 읽는다.
+        Throwable root = failure;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        String raw = failure.getClass().getSimpleName() + ": " + failure.getMessage()
+                + (root == failure ? "" : " <- " + root.getClass().getSimpleName() + ": " + root.getMessage());
         // DLQ 레코드가 스택트레이스 길이만큼 커지지 않게 자른다. 원인 규명은 ERROR 로그로 한다.
         final String error = raw.length() > 1_000 ? raw.substring(0, 1_000) : raw;
 

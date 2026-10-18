@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /** 직렬화와 실제 blocking stub 왕복까지 포함하는 권한 클라이언트 테스트. */
 class GrpcPermissionClientTest {
@@ -43,7 +44,7 @@ class GrpcPermissionClientTest {
         String serverName = InProcessServerBuilder.generateName();
         server = InProcessServerBuilder.forName(serverName).directExecutor().addService(org).build().start();
         channel = InProcessChannelBuilder.forName(serverName).directExecutor().build();
-        client = new GrpcPermissionClient(PermissionServiceGrpc.newBlockingStub(channel));
+        client = new GrpcPermissionClient(PermissionServiceGrpc.newBlockingStub(channel), 1);
     }
 
     @AfterEach
@@ -129,6 +130,20 @@ class GrpcPermissionClientTest {
                 .hasMessage("권한 서비스에 연결할 수 없습니다");
     }
 
+    /** P-04: org가 응답하지 않아도 스레드가 묶이지 않고 데드라인 안에 503으로 끝난다. */
+    @Test
+    void org가_응답하지_않으면_데드라인_안에_503으로_끝난다() {
+        org.hang = true;
+
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(5), () -> {
+            assertThatThrownBy(() -> client.accessibleSpaces(14L))
+                    .isInstanceOf(ServiceUnavailableException.class)
+                    .hasMessage("권한 서비스에 연결할 수 없습니다");
+            assertThatThrownBy(() -> client.isGlobalAdmin(14L))
+                    .isInstanceOf(ServiceUnavailableException.class);
+        });
+    }
+
     private static Grant grant(ResourceType type, String resourceId) {
         return Grant.newBuilder()
                 .setResourceType(type)
@@ -140,6 +155,7 @@ class GrpcPermissionClientTest {
     private static class StubOrg extends PermissionServiceGrpc.PermissionServiceImplBase {
         final List<Grant> grants = new ArrayList<>();
         volatile Status failure;
+        volatile boolean hang;
         volatile long lastUserId;
         volatile boolean allowed;
         volatile Role effectiveRole = Role.ROLE_UNSPECIFIED;
@@ -150,6 +166,7 @@ class GrpcPermissionClientTest {
                 ListUserGrantsRequest request,
                 StreamObserver<ListUserGrantsResponse> responseObserver) {
             lastUserId = request.getUserId();
+            if (hang) return; // 응답도 오류도 보내지 않는다 — 행(hang)한 org
             if (failure != null) {
                 responseObserver.onError(failure.asRuntimeException());
                 return;
@@ -163,6 +180,7 @@ class GrpcPermissionClientTest {
                 CheckPermissionRequest request,
                 StreamObserver<CheckPermissionResponse> responseObserver) {
             lastCheck = request;
+            if (hang) return;
             if (failure != null) {
                 responseObserver.onError(failure.asRuntimeException());
                 return;

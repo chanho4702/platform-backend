@@ -394,7 +394,7 @@ class RedisStreamEventConsumerTest {
         consumer = new RedisStreamEventConsumer(
                 redis,
                 new WikiEventIndexer(
-                        new GrpcWikiContentClient(WikiContentServiceGrpc.newBlockingStub(grpcChannel)),
+                        new GrpcWikiContentClient(WikiContentServiceGrpc.newBlockingStub(grpcChannel), 5, 60),
                         indexes),
                 properties,
                 // 색인은 위에서 이미 확보했다 — 소비 게이트는 열린 상태로 둔다.

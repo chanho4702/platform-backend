@@ -626,7 +626,7 @@ class GraphQlSearchIntegrationTest {
         @Primary
         PermissionClient testPermissionClient(
                 @Qualifier("testPermissionChannel") ManagedChannel channel) {
-            return new GrpcPermissionClient(PermissionServiceGrpc.newBlockingStub(channel));
+            return new GrpcPermissionClient(PermissionServiceGrpc.newBlockingStub(channel), 5);
         }
 
         @Bean
