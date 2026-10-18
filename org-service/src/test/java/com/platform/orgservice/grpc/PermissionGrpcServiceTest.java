@@ -190,6 +190,42 @@ class PermissionGrpcServiceTest {
         assertThat(spaceOnly.getGrants(0).getRole()).isEqualTo(Role.VIEWER);
     }
 
+    /**
+     * P-02: 검색은 ListUserGrants로 접근 가능 스페이스를 계산한다. CheckPermission과 같은 기준으로 비활성
+     * 구성원(정지·퇴사·승인 대기)은 grant를 그대로 들고 있어도 빈 목록이어야 한다 — 아니면 퇴사자 검색에 문서가 나온다.
+     */
+    @Test
+    void ListUserGrants_비활성_구성원은_grant가_있어도_빈_목록이다() {
+        grants.save(GrantEntry.of(SubjectType.USER, 50L, ResourceKind.GLOBAL, "", GrantRole.ADMIN));
+        grants.save(GrantEntry.of(SubjectType.USER, 50L, ResourceKind.SPACE, "10", GrantRole.EDITOR));
+        com.platform.orgservice.domain.Member m = memberRepo.save(
+                com.platform.orgservice.domain.Member.of(50L, "퇴사자", "gone@test.com"));
+        m.deactivate(java.time.Instant.now());
+        memberRepo.save(m);
+
+        assertThat(stub.listUserGrants(ListUserGrantsRequest.newBuilder().setUserId(50L).build()).getGrantsList())
+                .isEmpty();
+
+        com.platform.orgservice.domain.Member s = memberRepo.save(
+                com.platform.orgservice.domain.Member.of(51L, "정지", "paused@test.com"));
+        grants.save(GrantEntry.of(SubjectType.USER, 51L, ResourceKind.SPACE, "11", GrantRole.VIEWER));
+        s.suspend(java.time.Instant.now());
+        memberRepo.save(s);
+
+        assertThat(stub.listUserGrants(ListUserGrantsRequest.newBuilder().setUserId(51L)
+                .setResourceType(ResourceType.SPACE).build()).getGrantsList()).isEmpty();
+    }
+
+    @Test
+    void ListUserGrants_활성_구성원과_미러링_전_사용자는_그대로_본다() {
+        memberRepo.save(com.platform.orgservice.domain.Member.of(52L, "활성", "on@test.com"));
+        grants.save(GrantEntry.of(SubjectType.USER, 52L, ResourceKind.SPACE, "12", GrantRole.VIEWER));
+        grants.save(GrantEntry.of(SubjectType.USER, 53L, ResourceKind.SPACE, "13", GrantRole.VIEWER)); // member 행 없음
+
+        assertThat(stub.listUserGrants(ListUserGrantsRequest.newBuilder().setUserId(52L).build()).getGrantsList()).hasSize(1);
+        assertThat(stub.listUserGrants(ListUserGrantsRequest.newBuilder().setUserId(53L).build()).getGrantsList()).hasSize(1);
+    }
+
     @Test
     void CreateGrant_신규는_created_true_중복은_false_멱등() {
         CreateGrantRequest req = CreateGrantRequest.newBuilder()

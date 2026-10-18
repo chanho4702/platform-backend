@@ -243,10 +243,22 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
         return d.effectiveRole() == null ? "NO_GRANT" : "INSUFFICIENT_ROLE";
     }
 
+    /**
+     * 사용자의 grant 목록(검색의 접근 가능 스페이스 계산 등).
+     *
+     * <p>{@link #checkPermission}과 같은 기준으로 계정 상태를 먼저 본다(P-02): ACTIVE가 아니면 grant를 그대로
+     * 들고 있어도 빈 목록이다. member 행이 없으면(미러링 전) 평소대로 grant를 본다 — checkPermission과 같은 이유.
+     */
     @Override
     public void listUserGrants(ListUserGrantsRequest req, StreamObserver<ListUserGrantsResponse> out) {
         ResourceKind kind = toKind(req.getResourceType()); // UNSPECIFIED → null → 전체
         ListUserGrantsResponse.Builder res = ListUserGrantsResponse.newBuilder();
+        MemberStatus status = statusOf(req.getUserId());
+        if (status != null && status != MemberStatus.ACTIVE) {
+            out.onNext(res.build());
+            out.onCompleted();
+            return;
+        }
         permissions.grantsOf(req.getUserId(), kind).forEach(g -> res.addGrants(Grant.newBuilder()
                 .setResourceType(toProtoKind(g.getResourceType()))
                 .setResourceId(g.getResourceId())
