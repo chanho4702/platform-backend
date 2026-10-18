@@ -41,7 +41,11 @@ dev 오프셋 규약은 운영 포트 **+10000**이다(도커 배포판과 공�
 
 둘을 뭉뚱그리면 데이터 수리가 필요한 상태를 조용히 색인에서 지우게 된다.
 
-> **알려진 갭**: gRPC 채널에 인증이 없다. 내부망 전용(호스트 포트 미개방)을 전제로 defer된 플랫폼 전역 과제다.
+> **서비스 간 gRPC 인증(P-01, 단계 적용 중)**: common-starter 0.17.0의 토큰 인터셉터 — 클라이언트는 메타데이터
+> `x-internal-token`에 `PLATFORM_GRPC_TOKEN`을 싣고, 서버(org)는 `PLATFORM_GRPC_AUTH_MODE`(off/**monitor**/enforce)로
+> 검사한다. 기본 monitor는 토큰이 없거나 틀려도 통과시키고 (메서드·사유)별 분당 한 줄 경고(원격 주소 포함)만 남긴다.
+> 전 호출자(wiki·alm·agent·migration·search)가 토큰을 보내는 것을 로그로 확인한 뒤 enforce로 올린다.
+> 운영 리플렉션은 꺼져 있다(`ORG_GRPC_REFLECTION`, dev 프로필만 켬).
 
 ### 발행 / 소비
 
@@ -172,6 +176,12 @@ SUSPENDED·DEACTIVATED는 그 사람이 마지막 GLOBAL ADMIN이면 `409 {"erro
 `DEACTIVATED`는 Keycloak 계정을 `enabled=false`로 잠그고, 실패해도 우리 상태는 바뀌며
 `member_event(KEYCLOAK_DISABLED_FAILED)`에 남는다(관리자가 퇴사 처리를 못 하는 편이 더 나쁘다).
 
+**auth-server 계정 동기화(P-02).** `SUSPENDED`·`DEACTIVATED`가 되면 auth-server 계정을 닫는다 — 그 사람의 리프레시
+토큰이 전부 폐기되고 PAT 교환이 거부된다(정지 해제·재초대로 `ACTIVE`·`PENDING`이 되면 다시 연다). 상태를 바꾸는 경로마다
+훅을 거는 대신 `member.auth_synced_enabled`(V9, 반영 확인값)와 상태를 5초마다 대조해 어긋난 행만
+`PUT {auth}/internal/users/{id}/status`로 보낸다 — auth-server가 죽어 있던 동안의 변경도 유실되지 않는다.
+gRPC `ListUserGrants`도 `CheckPermission`과 같이 비활성 구성원에게는 빈 목록이다.
+
 **서비스 간 전용 경로** — 게이트웨이가 라우팅하지 않는다. 인증은 `X-Internal-Token` 헤더 하나뿐이고,
 `ORG_INTERNAL_TOKEN`이 비어 있으면 헤더와 무관하게 전부 `403`이다(fail-closed).
 
@@ -182,7 +192,12 @@ SUSPENDED·DEACTIVATED는 그 사람이 마지막 GLOBAL ADMIN이면 `409 {"erro
 
 | 변수 | 기본값 | 용도 |
 |---|---|---|
-| `ORG_INTERNAL_TOKEN` | (빈 값) | `/internal/org/**` 게이트. 비면 내부 API 전체 차단 |
+| `ORG_INTERNAL_TOKEN` | (빈 값) | `/internal/org/**` 게이트. 비면 내부 API 전체 차단. auth-server 계정 상태 동기화(아래)에도 같은 값을 쓴다 |
+| `PLATFORM_GRPC_TOKEN` | (빈 값) | 서비스 간 gRPC 토큰(P-01). org gRPC 서버가 검사, 호출자가 송신 — 플랫폼 공용 1개 |
+| `PLATFORM_GRPC_AUTH_MODE` | `monitor` | `off` / `monitor`(통과+경고) / `enforce`(토큰 없거나 틀리면 `UNAUTHENTICATED`, 토큰 미설정이면 전부 거부) |
+| `ORG_GRPC_REFLECTION` | `false` | gRPC 서버 리플렉션. dev 프로필은 켬 |
+| `AUTH_SERVICE_URI` | (빈 값 → `AUTH_JWKS_URI` 오리진) | 구성원 상태 동기화가 부르는 auth-server 주소 |
+| `ORG_AUTH_SYNC_ENABLED` / `ORG_AUTH_SYNC_POLL_MS` | `true` / `5000` | 구성원 정지·퇴사 → auth-server 계정 닫기(P-02) 워커 |
 | `ORG_INVITATION_TTL` | `P7D` | 초대 유효기간(ISO-8601) |
 | `ORG_INVITATION_BASE_URL` (= `PLATFORM_ORG_INVITATION_BASE_URL`) | (빈 값) | 초대 링크 호스트. 경로는 auth-server `/invite/{token}`. 비면 상대 경로. 완화 바인딩 이름이 우선한다(compose가 쓰는 쪽) |
 | `ORG_INVITATION_EMAIL_MATCH_PROVIDERS` | `GOOGLE` | 토큰 없이 이메일 대조만으로 소진 가능한 로그인 경로(콤마 구분) |
@@ -455,6 +470,8 @@ $env:JAVA_HOME = 'C:\Program Files\Java\jdk-24'
 | `REDIS_HOST` / `REDIS_DB` | `localhost` / `0` | 이벤트 스트림 (**dev는 db1** — 발행자와 반드시 같아야 한다) |
 | `ORG_GRPC_HOST` / `ORG_GRPC_PORT` | `localhost` / `9131` | 권한 필터 |
 | `WIKI_GRPC_HOST` / `WIKI_GRPC_PORT` | `localhost` / `9111` | 본문·첨부 조달 |
+| `ORG_GRPC_DEADLINE_SECONDS` | `5` | org 호출 데드라인(P-04, wiki·alm과 같은 키). 초과는 503 |
+| `WIKI_GRPC_DEADLINE_SECONDS` / `WIKI_GRPC_STREAM_DEADLINE_SECONDS` | `5` / `600` | wiki 단건 호출 / 재색인 백필 스트림 전체 상한 |
 | `EVENTS_ENABLED` / `EVENTS_MAX_RETRIES` | `true` / `5` | 소비 on-off, DLQ 이동 임계 |
 | `AUTH_JWKS_URI` · `PLATFORM_ISSUER` · `PLATFORM_AUDIENCE` | auth-server 계약 | JWT 검증 |
 
