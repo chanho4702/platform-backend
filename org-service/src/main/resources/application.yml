@@ -129,6 +129,14 @@ platform:
         batch-size: ${MAIL_OUTBOX_BATCH:20}
         retention-days: ${MAIL_OUTBOX_RETENTION_DAYS:30}
         cleanup-cron: ${MAIL_OUTBOX_CLEANUP_CRON:0 40 4 * * *}
+    auth-sync:
+      # 구성원 정지·퇴사 → auth-server 계정 닫기(RT 전부 폐기·PAT 교환 거부), 해제·재초대 → 다시 열기(P-02).
+      # 인증은 위 internal-token(ORG_INTERNAL_TOKEN — auth-server와 같은 값)을 그대로 쓴다.
+      enabled: ${ORG_AUTH_SYNC_ENABLED:true}
+      # auth-server 주소. 비우면 AUTH_JWKS_URI의 오리진(http://auth-server:9000)을 쓴다.
+      uri: ${AUTH_SERVICE_URI:}
+      poll-ms: ${ORG_AUTH_SYNC_POLL_MS:5000}
+      batch-size: ${ORG_AUTH_SYNC_BATCH:50}
     keycloak:
       # 계정 비활성/활성(Admin REST). 시크릿이 없으면 no-op이고 member_event에만 흔적이 남는다.
       issuer-uri: ${KEYCLOAK_ISSUER_URI:}

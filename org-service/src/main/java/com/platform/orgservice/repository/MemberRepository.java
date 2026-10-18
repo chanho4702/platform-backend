@@ -53,6 +53,29 @@ public interface MemberRepository extends JpaRepository<Member, Long>, JpaSpecif
     long countByKind(MemberKind kind);
 
     /**
+     * auth-server 반영이 밀린 구성원(P-02) — 원하는 값(정지·퇴사면 닫힘)과 반영된 값이 어긋난 행.
+     * 네이티브인 이유: V9의 부분 인덱스({@code ix_member_auth_sync_pending})와 술어를 글자 그대로 맞춰야
+     * 플래너가 그 인덱스를 쓴다. 상태 목록은 {@link MemberStatus#LOGIN_BLOCKED}와 같아야 한다.
+     */
+    @Query(value = """
+            select * from member
+            where (status in ('SUSPENDED', 'DEACTIVATED')) = auth_synced_enabled
+            order by id
+            limit :limit
+            """, nativeQuery = true)
+    List<Member> findAuthSyncPending(@Param("limit") int limit);
+
+    /**
+     * auth-server 반영 확인 기록. 보낸 뒤 상태가 또 바뀌었으면(조건 불일치) 0행 — 다음 주기에 다시 보낸다.
+     * 네이티브인 이유: 이 열은 엔티티에서 읽기 전용(insertable·updatable=false)이다.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query(value = "update member set auth_synced_enabled = :enabled where id = :id and status = :status",
+           nativeQuery = true)
+    int markAuthSynced(@Param("id") long id, @Param("status") String status, @Param("enabled") boolean enabled);
+
+    /**
      * 이메일 local-part 일치(대소문자 무시) — org에는 username 컬럼이 없어 이것이 username 규칙이다.
      * {@code locate('@', email) > 1}로 '@'가 없거나 맨 앞인 값을 먼저 걸러 낸다(substring 인자가 음수가 된다).
      */

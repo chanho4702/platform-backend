@@ -11,4 +11,13 @@ public enum MemberStatus {
     PENDING, ACTIVE, SUSPENDED, DEACTIVATED;
 
     public boolean isActive() { return this == ACTIVE; }
+
+    /**
+     * auth-server 계정을 열어 둘 상태인가(P-02). 정지·퇴사만 닫는다 — 승인 대기(PENDING)는 로그인해서
+     * "승인 대기" 화면을 보고, 재초대된 퇴사자가 초대를 소진하려면 토큰을 받을 수 있어야 한다.
+     */
+    public boolean allowsLogin() { return this != SUSPENDED && this != DEACTIVATED; }
+
+    /** {@link #allowsLogin()}이 거짓인 상태들 — 동기화 질의용. */
+    public static final java.util.Set<MemberStatus> LOGIN_BLOCKED = java.util.EnumSet.of(SUSPENDED, DEACTIVATED);
 }

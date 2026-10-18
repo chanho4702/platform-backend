@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -49,6 +50,15 @@ public class Member {
 
     @Column(name = "deactivated_at")
     private Instant deactivatedAt;
+
+    /**
+     * auth-server {@code users.enabled}에 마지막으로 반영된 값(P-02, V9). 엔티티 저장으로는 절대 쓰지 않는다
+     * (insertable·updatable=false) — 다른 트랜잭션이 들고 있던 옛 값이 더티 체킹으로 덮어써 "반영됐다"고 잘못
+     * 기록되는 경쟁을 막기 위해서다. 쓰기는 {@code MemberRepository.markAuthSynced}(조건부 UPDATE)만 한다.
+     */
+    @ColumnDefault("true")
+    @Column(name = "auth_synced_enabled", nullable = false, insertable = false, updatable = false)
+    private boolean authSyncedEnabled = true;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)

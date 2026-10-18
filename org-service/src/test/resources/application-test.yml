@@ -39,6 +39,9 @@ platform:
       outbox:
         poll-ms: 3600000
         cleanup-cron: "0 0 3 1 1 *"
+    auth-sync:
+      # 테스트는 syncOnce()를 직접 부른다 — 스케줄러가 끼어들지 않게
+      poll-ms: 3600000
     avatar:
       files-dir: build/test-avatars
       s3:
