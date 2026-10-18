@@ -15,3 +15,5 @@ eureka:
 platform:
   grpc:
     port: 19131
+    # 로컬 디버깅(grpcurl)용 — 운영(docker)은 끈다
+    reflection: true

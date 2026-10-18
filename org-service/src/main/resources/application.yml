@@ -76,6 +76,13 @@ platform:
   grpc:
     port: ${ORG_GRPC_PORT:9131}
     enabled: true
+    # 서버 리플렉션(grpcurl 스키마 탐색). 운영 기본은 끔 — dev 프로필만 켠다(P-01).
+    reflection: ${ORG_GRPC_REFLECTION:false}
+    # 서비스 간 gRPC 토큰(P-01). common-starter가 PLATFORM_GRPC_TOKEN·PLATFORM_GRPC_AUTH_MODE env를 직접 읽는다.
+    # 모드: off | monitor(기본 — 토큰 없거나 틀려도 통과, 분당 한 줄 경고) | enforce(UNAUTHENTICATED로 거부)
+    auth:
+      mode: ${PLATFORM_GRPC_AUTH_MODE:monitor}
+      token: ${PLATFORM_GRPC_TOKEN:}
   # 최초 GLOBAL ADMIN 부트스트랩 — auth-server user id. 빈 값이면 시드 생략.
   bootstrap-admin-id: ${PLATFORM_BOOTSTRAP_ADMIN_ID:}
   org:
