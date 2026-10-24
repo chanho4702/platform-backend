@@ -224,6 +224,7 @@ gRPC `ListUserGrants`도 `CheckPermission`과 같이 비활성 구성원에게�
 | `GET` | `/internal/org/invitations/by-token/{token}` | → `{email, status, expiresAt}`, 무효면 `404 {"error":"유효하지 않은 초대입니다"}` |
 | `POST` | `/internal/org/invitations/accept` | `{token, memberId, email, displayName?, emailVerified?}` → `{accepted, status, invitationId}` (이메일 불일치 `EMAIL_MISMATCH`, 미검증·값 없음 `EMAIL_UNVERIFIED` — 둘 다 `accepted:false`) |
 | `POST` | `/internal/org/members/ensure` | `{memberId, email?, displayName?, provider?}` → `{memberId, status}` — auth-server가 로그인 성공 때 부른다. 없으면 `PENDING` 생성(신뢰 provider의 이메일 일치 초대·부트스트랩 관리자는 그 자리에서 `ACTIVE`), 있으면 상태 유지(멱등) |
+| `GET` | `/internal/org/members/{id}/authz` | → `{memberId, status, globalAdmin}` — auth-server 에이전트 관리 게이트(`/api/auth/agents/**`)가 부른다. `globalAdmin`은 ACTIVE + GLOBAL ADMIN grant일 때만 `true`, 행이 없으면 `status:"MISSING"`(200) |
 
 | 변수 | 기본값 | 용도 |
 |---|---|---|

@@ -124,6 +124,37 @@ class InternalMemberEnsureApiTest {
         ensure(805L, "pwd@test.com", "KEYCLOAK").andExpect(jsonPath("$.status").value("PENDING"));
     }
 
+    /** auth-server 에이전트 관리 게이트가 묻는 판정 — 활성 + GLOBAL ADMIN grant일 때만 참, 행이 없으면 MISSING(200). */
+    @Test
+    void authz는_활성_전역_관리자만_참이다() throws Exception {
+        Member paused = members.save(Member.of(806L, "정지관리자", "p@test.com"));
+        grants.save(GrantEntry.globalAdmin(806L));
+        paused.suspend(Instant.now());
+        members.save(paused);
+        active(members, 807L, "User");
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/internal/org/members/" + ADMIN_ID + "/authz").header(TOKEN_HEADER, TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.globalAdmin").value(true));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/internal/org/members/806/authz").header(TOKEN_HEADER, TOKEN))
+                .andExpect(jsonPath("$.status").value("SUSPENDED"))
+                .andExpect(jsonPath("$.globalAdmin").value(false));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/internal/org/members/807/authz").header(TOKEN_HEADER, TOKEN))
+                .andExpect(jsonPath("$.globalAdmin").value(false));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/internal/org/members/999999/authz").header(TOKEN_HEADER, TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("MISSING"))
+                .andExpect(jsonPath("$.globalAdmin").value(false));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/internal/org/members/" + ADMIN_ID + "/authz"))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void 부트스트랩_관리자는_첫_로그인에_활성이다() throws Exception {
         ensure(777L, "boss@test.com", "KEYCLOAK").andExpect(jsonPath("$.status").value("ACTIVE"));
