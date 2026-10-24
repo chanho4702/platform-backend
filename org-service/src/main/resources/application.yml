@@ -101,8 +101,15 @@ platform:
       # 토큰 없이 이메일 대조만으로 초대를 소진해도 되는 로그인 경로(콤마 구분).
       # 구글 IdP는 trustEmail이라 이메일이 검증된 값이다 — 비밀번호 가입은 링크 경유만 인정한다.
       email-match-providers: ${ORG_INVITATION_EMAIL_MATCH_PROVIDERS:GOOGLE}
-      # 리소스(SPACE/PROJECT) ADMIN의 초대 허용. 조직 정책상 전역 관리자만이면 false.
-      resource-admin-enabled: ${ORG_INVITATION_RESOURCE_ADMIN:true}
+      # 리소스(SPACE/PROJECT) ADMIN의 초대 허용. 기본 false(2026-10-24 권한·계정 점검 Top 5-②) — 스페이스 ADMIN은
+      # 스페이스를 만들기만 해도 생겨서, 켜 두면 개인 스페이스 하나로 외부인을 활성 구성원으로 부를 수 있었다.
+      # org는 스페이스가 개인용인지 모르므로(resource_id만 안다) 경로 자체를 닫는다. 켤 때는 생성 가능 대상
+      # (/api/org/settings/creation)도 함께 좁힌다.
+      resource-admin-enabled: ${ORG_INVITATION_RESOURCE_ADMIN:false}
+      # 초대 가능 이메일 도메인(콤마 구분, 예: corp.example.com,example.co.kr). 비우면 제한 없음. 전역 관리자에게도 적용.
+      allowed-domains: ${ORG_INVITATION_ALLOWED_DOMAINS:}
+      # 초대 링크 수락 시 Keycloak email_verified=true를 요구(점검 m5). 끄면 검증 안 된 비밀번호 가입 이메일도 믿는다.
+      require-verified-email: ${ORG_INVITATION_REQUIRE_VERIFIED_EMAIL:true}
       expiry-cron: ${ORG_INVITATION_EXPIRY_CRON:0 */10 * * * *}
     mail:
       # 플랫폼 메일 허브. 발송은 이 서비스 한 곳에서만 하고 wiki·alm은 /internal/org/mail로 넘긴다.

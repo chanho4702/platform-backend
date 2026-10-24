@@ -92,6 +92,18 @@ public class MemberService {
         return resultOf(member.getStatus());
     }
 
+    /**
+     * 로그인 순간의 구성원 행 보장(auth-server → {@code /internal/org/members/ensure}, Top 5-①).
+     * {@link #mirror}와 같은 규칙이다 — 없으면 PENDING 생성 + 초대(신뢰 provider)·부트스트랩 처리, 있으면 상태 유지.
+     *
+     * @return 처리 후 상태
+     */
+    @Transactional
+    public MemberStatus ensure(long id, String displayName, String email, String provider) {
+        mirror(id, displayName, email, provider);
+        return members.findById(id).map(Member::getStatus).orElse(MemberStatus.PENDING);
+    }
+
     private static MirrorResult resultOf(MemberStatus status) {
         return switch (status) {
             case PENDING -> new MirrorResult(true, "승인 대기 중인 계정입니다");

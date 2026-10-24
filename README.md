@@ -102,7 +102,8 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 둘 다 trim + 대소문자 무시로 대조하고 **매칭된 것만** 돌려준다(못 찾은 질의는 응답에서 빠진다 — 호출측이 fail-closed로 닫는다). 활성 멤버만 보고, 한 질의에 후보가 둘 이상이면 매칭으로 세지 않는다 — `member.email`에 UNIQUE가 없어 누구인지 모르는 채로 하나를 고르면 남의 이름으로 문서가 쓰인다. 한 요청의 항목 상한은 200이고 넘으면 `INVALID_ARGUMENT`다.
 
 > ⚠️ **기본값이 실행 방식에 따라 다르다.** `application.yml`은 `${PLATFORM_BOOTSTRAP_ADMIN_ID:}` — 즉 **코드 기본값은 빈 값이고, 비어 있으면 `BootstrapAdminSeeder`가 시딩을 건너뛴다.** `gradlew :org-service:bootRun`으로 직접 띄우면 아무도 자동으로 관리자가 되지 않는다.
-> 반면 **compose는 `${PLATFORM_BOOTSTRAP_ADMIN_ID:-1}`로 1을 주입**하므로 컨테이너 스택에서는 사용자 1이 재기동마다 GLOBAL ADMIN으로 복구된다. 운영 배포 전 `.env`에 실제 관리자 id를 명시하거나 빈 값으로 두어 비활성화할 것.
+> **compose도 기본은 빈 값이다**(2026-10-24, 권한·계정 점검 m1 — 예전 compose는 키가 없으면 1을 넣어 사용자 1이 재기동마다 GLOBAL ADMIN으로 복구됐다).
+> 새 설치는 첫 관리자 id를 `.env`에 **명시**한다(INSTALL.md §6 "첫 관리자 부트스트랩"). 이미 부여된 GLOBAL ADMIN grant는 DB에 남으므로 값을 지워도 기존 관리자는 그대로다 — 값은 "기동마다 다시 확인"만 한다.
 > 값이 숫자가 아니면 기동이 실패한다(`BootstrapAdminId`) — 오타 난 설치가 "관리자 없는 플랫폼"으로 조용히 떠 있는 쪽이 더 나쁘다.
 
 ### 사용자 초대 · 상태 · 팀 권한 (V4~V6, U1)
@@ -124,13 +125,36 @@ REST `/api/org/**`(게이트웨이 경유) + gRPC `PermissionService`(:9131, 내
 
 **상태 판정은 org 하나로 통일된다.** gRPC `CheckPermission`은 `ACTIVE`가 아닌 멤버를 grant를 보기 전에
 거부한다(fail-closed) — 정지·퇴사자가 권한을 그대로 들고 있어도 wiki·alm이 문서를 열어 주지 않는다.
-member 행이 아예 없으면 상태로 막지 않고 평소의 grant 판정에 맡긴다(그러지 않으면 미러링 순서에 따라
-기존 사용자가 무작위로 차단된다).
+**member 행이 아예 없으면 `PENDING`으로 거부한다**(2026-10-24, 권한·계정 점검 Top 5-① — 예전에는 평소의 grant 판정에
+맡겨서, 승인 대기 격리를 건너뛰고 API를 직접 불러 스페이스를 만든 뒤 ADMIN을 얻는 우회가 있었다). 행이 늦게 생겨
+막히는 일이 없도록 **auth-server가 로그인 성공 순간 `POST /internal/org/members/ensure`로 행을 보장**하고, 배포 전부터
+있던 계정은 `infra/runbooks/member-row-backfill.md`(infra-settings) 백필로 채운다. 에이전트 페르소나는 agent-service 등록이
+ACTIVE 행을 만든다. `ListUserGrants`도 같은 기준이다(행 없음 = 빈 목록).
 
 > **이 거부는 정상 응답이지 오류가 아니다.** `UNAVAILABLE` 같은 상태 코드로 올리지 않는다 — 소비자가
 > "org가 죽었다"와 "이 사람이 막혔다"를 구분할 수 있어야 한다. 대신 `CheckPermissionResponse.denied_reason`
-> (0.16.0)이 이유를 문자열로 싣는다: `PENDING`·`SUSPENDED`·`DEACTIVATED`(상태) / `NO_GRANT`·`INSUFFICIENT_ROLE`(권한),
-> 허용이면 빈 문자열. 값은 앞으로 늘 수 있으니 모르는 값은 일반 거부로 다룬다.
+> (0.16.0)이 이유를 문자열로 싣는다: `PENDING`·`SUSPENDED`·`DEACTIVATED`(상태 — 행 없음도 `PENDING`) / `NO_GRANT`·`INSUFFICIENT_ROLE`(권한) /
+> `CREATE_RESTRICTED`(생성 판정, 아래), 허용이면 빈 문자열. 값은 앞으로 늘 수 있으니 모르는 값은 일반 거부로 다룬다.
+
+**스페이스·프로젝트 생성 권한(Top 5-③, V10).** "새로 만들 수 있는가"는 grant가 아니라 전역 설정이 정한다 — proto를 바꾸지 않고
+기존 `CheckPermission`에 싣는다(0.17.0 그대로, 발행 대기 없음):
+
+```
+CheckPermission { user_id, resource_type: GLOBAL, resource_id: "create:SPACE" | "create:PROJECT", action: EDIT }
+→ { allowed, effective_role: ROLE_UNSPECIFIED, denied_reason: "" | PENDING | SUSPENDED | DEACTIVATED | CREATE_RESTRICTED }
+```
+
+판정 순서: ① 계정 상태(ACTIVE 아님·행 없음 → 상태 이름) ② GLOBAL ADMIN은 항상 허용 ③ 설정 모드 — `ALL_ACTIVE`(기본, 설정 행 없음 =
+이것, 컨플루언스 기본과 같다) / `GLOBAL_ADMIN` / `TEAMS`(지정 팀의 구성원). 대상 문자열이 틀리면(`create:PAGE` 등) `INVALID_ARGUMENT`.
+`action`은 보지 않는다(계약상 `EDIT`). **소비자(wiki·alm)는 생성 API 진입에서 이 판정을 먼저 묻고**, 거부면 `403`, `UNAVAILABLE`·`DEADLINE_EXCEEDED`면
+`503`, 그 밖의 gRPC 오류는 fail-closed(거부)다(기존 장애 전파 규약 그대로). 롤아웃 주의: 이 판정을 모르는 옛 org는 `GLOBAL/"create:*"`를 평범한
+GLOBAL grant 조회로 처리해 **전원 거부**(fail-closed)하므로 **org를 먼저 배포**한다.
+
+| 메서드 | 경로 | 인가 | 요청 → 응답 |
+|---|---|---|---|
+| `GET` | `/settings/creation` | GLOBAL ADMIN | → `{space:{mode, teamIds[], updatedBy, updatedAt}, project:{…}}` (미설정이면 `ALL_ACTIVE`·`[]`·`null`·`null`) |
+| `PUT` | `/settings/creation` | GLOBAL ADMIN | `{space?:{mode, teamIds?}, project?:{mode, teamIds?}}` — 생략한 쪽은 그대로, `TEAMS`가 아니면 `teamIds` 무시. `TEAMS`에 빈 팀 `400 팀을 하나 이상 지정하세요`, 없는 팀 `404` |
+| `GET` | `/me/capabilities` | 인증(PENDING 포함) | → `{canCreateSpace, canCreateProject}` — 버튼 표시용, 승인 대기면 둘 다 `false` |
 
 **"전체 구성원" 팀**(`team.kind='EVERYONE'`)에는 활성 사람 멤버 전원이 자동으로 속한다. 수동 추가·제거·삭제·
 이름 변경은 `400`이다. 스페이스·프로젝트 ADMIN이 이 팀에 VIEWER를 주면 그것이 곧 "공개"다.
@@ -146,6 +170,7 @@ member 행이 아예 없으면 상태로 막지 않고 평소의 grant 판정에
 | `POST` | `/members/{id}/approve` | GLOBAL ADMIN | `{teams?[{teamId,role}], grants?[{scope,resourceId,role}]}` → 상세(ACTIVE·`joinedVia=APPROVAL`·전체 구성원 합류) |
 | `GET` | `/members/{id}/events` | GLOBAL ADMIN | 초대·상태 이력 |
 | `POST` | `/invitations` | §초대 권한 | `{emails[], teams?[{teamId,role}], grants?[{scope,resourceId,role}], message?}` → `201` 초대 배열(각 `inviteUrl`·`mailSent`) |
+| `GET` | `/invitations/policy` | 인증 | → `{canInvite, resourceAdminEnabled, allowedDomains[]}` — 초대 버튼·도메인 안내용 |
 | `GET` | `/invitations` | GLOBAL ADMIN(리소스 ADMIN은 자기가 보낸 것만) | `status`·`q`·`page`·`size` → `{items[], page, size, total}`, `inviteUrl`은 항상 `null` |
 | `POST` | `/invitations/{id}/resend` | 동일 | `?mail=true|false` → 새 토큰·새 만료 + `inviteUrl` |
 | `DELETE` | `/invitations/{id}` | 동일 | PENDING → REVOKED, `204` |
@@ -161,10 +186,19 @@ member 행이 아예 없으면 상태로 막지 않고 평소의 grant 판정에
 > 권한 **프리셋**은 `scope`를 받는다. 프리셋은 "지금 만들 grant"가 아니라 "수락하면 만들 조건"이라
 > 같은 이름을 쓰면 두 요청이 같은 것으로 읽힌다. 프론트가 이 구분에 맞춰져 있다.
 
-**초대 권한.** GLOBAL ADMIN은 무제한. 리소스(SPACE/PROJECT) ADMIN도 초대할 수 있지만
-(`ORG_INVITATION_RESOURCE_ADMIN=false`로 끈다) 권한 프리셋은 **자기가 ADMIN인 리소스**로만, 팀 프리셋은
-**자기가 LEAD인 팀**으로만, 전역 역할 프리셋은 GLOBAL ADMIN만이다. 아무 리소스의 ADMIN도 아니면
-`403 {"error":"초대 권한이 없습니다"}`.
+**초대 권한.** GLOBAL ADMIN은 무제한. 리소스(SPACE/PROJECT) ADMIN 경로는 **기본 꺼짐**이다(2026-10-24, Top 5-② —
+스페이스 ADMIN은 스페이스를 만들기만 해도 생겨서, 켜 두면 개인 스페이스 하나로 외부인을 활성 구성원으로 부를 수 있었다.
+org는 스페이스가 개인용인지 모르므로 개인 스페이스만 빼는 판정은 불가 → 경로를 닫는다). `ORG_INVITATION_RESOURCE_ADMIN=true`로
+켜면 권한 프리셋은 **자기가 ADMIN인 리소스**로만, 팀 프리셋은 **자기가 LEAD인 팀**으로만, 전역 역할 프리셋은 GLOBAL ADMIN만이다
+(켤 때는 생성 가능 대상도 함께 좁힌다). 권한이 없으면 `403 {"error":"초대 권한이 없습니다"}`.
+
+**초대 도메인 허용 목록.** `ORG_INVITATION_ALLOWED_DOMAINS`(콤마 구분, 대소문자·앞 `@` 무시, **정확히 일치** — 하위 도메인은 따로 적는다)가
+있으면 그 밖의 주소는 전역 관리자라도 `400 {"error":"초대할 수 없는 이메일 도메인입니다: …"}`이고, 한 요청에 하나라도 걸리면 아무 초대도
+만들지 않는다. 재발송에도 적용된다. 화면은 `GET /invitations/policy` → `{canInvite, resourceAdminEnabled, allowedDomains[]}`로 버튼·안내를 그린다.
+
+**링크 수락은 검증된 이메일만(점검 m5).** `POST /internal/org/invitations/accept`의 `emailVerified`(Keycloak `email_verified`)가 `true`가 아니면
+(빠진 값 포함) `accepted:false, status:"EMAIL_UNVERIFIED"` — 초대는 살아 있고 그 사람은 승인 대기로 남는다. 끄려면
+`ORG_INVITATION_REQUIRE_VERIFIED_EMAIL=false`.
 
 **마지막 전역 관리자 보호.** `PATCH /grants/{id}` 강등, `DELETE /grants/{id}`, `PATCH /members/{id}`의
 SUSPENDED·DEACTIVATED는 그 사람이 마지막 GLOBAL ADMIN이면 `409 {"error":"마지막 전역 관리자는 내릴 수 없습니다"}`다.
@@ -188,7 +222,8 @@ gRPC `ListUserGrants`도 `CheckPermission`과 같이 비활성 구성원에게�
 | 메서드 | 경로 | 요청 → 응답 |
 |---|---|---|
 | `GET` | `/internal/org/invitations/by-token/{token}` | → `{email, status, expiresAt}`, 무효면 `404 {"error":"유효하지 않은 초대입니다"}` |
-| `POST` | `/internal/org/invitations/accept` | `{token, memberId, email, displayName?}` → `{accepted, status, invitationId}` (이메일 불일치면 `accepted:false, status:"EMAIL_MISMATCH"`) |
+| `POST` | `/internal/org/invitations/accept` | `{token, memberId, email, displayName?, emailVerified?}` → `{accepted, status, invitationId}` (이메일 불일치 `EMAIL_MISMATCH`, 미검증·값 없음 `EMAIL_UNVERIFIED` — 둘 다 `accepted:false`) |
+| `POST` | `/internal/org/members/ensure` | `{memberId, email?, displayName?, provider?}` → `{memberId, status}` — auth-server가 로그인 성공 때 부른다. 없으면 `PENDING` 생성(신뢰 provider의 이메일 일치 초대·부트스트랩 관리자는 그 자리에서 `ACTIVE`), 있으면 상태 유지(멱등) |
 
 | 변수 | 기본값 | 용도 |
 |---|---|---|
@@ -201,7 +236,9 @@ gRPC `ListUserGrants`도 `CheckPermission`과 같이 비활성 구성원에게�
 | `ORG_INVITATION_TTL` | `P7D` | 초대 유효기간(ISO-8601) |
 | `ORG_INVITATION_BASE_URL` (= `PLATFORM_ORG_INVITATION_BASE_URL`) | (빈 값) | 초대 링크 호스트. 경로는 auth-server `/invite/{token}`. 비면 상대 경로. 완화 바인딩 이름이 우선한다(compose가 쓰는 쪽) |
 | `ORG_INVITATION_EMAIL_MATCH_PROVIDERS` | `GOOGLE` | 토큰 없이 이메일 대조만으로 소진 가능한 로그인 경로(콤마 구분) |
-| `ORG_INVITATION_RESOURCE_ADMIN` | `true` | 리소스 ADMIN의 초대 허용 |
+| `ORG_INVITATION_RESOURCE_ADMIN` | `false` | 리소스 ADMIN의 초대 허용(2026-10-24 기본 끔) |
+| `ORG_INVITATION_ALLOWED_DOMAINS` | (빈 값 = 제한 없음) | 초대 가능 이메일 도메인(콤마 구분, 정확히 일치) |
+| `ORG_INVITATION_REQUIRE_VERIFIED_EMAIL` | `true` | 링크 수락 시 `email_verified=true` 요구 |
 | `ORG_INVITATION_EXPIRY_CRON` | `0 */10 * * * *` | 만료 배치 |
 | 초대 메일 | — | SMTP 설정은 org-service가 아니라 **플랫폼 메일 설정**이 정본이다(아래 절). 꺼져 있으면 `mailSent:false`이고 화면이 링크 복사를 안내한다 |
 | `KEYCLOAK_ISSUER_URI` | (빈 값) | Keycloak realm 주소(`.../realms/{realm}`) |

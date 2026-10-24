@@ -45,11 +45,16 @@ public class InternalInvitationController {
     /** 로그인 성공 직후 호출. 실패해도 auth-server는 로그인을 계속한다(이메일 매칭 경로가 남아 있다). */
     @PostMapping("/accept")
     public InvitationService.AcceptOutcome accept(@Valid @RequestBody AcceptRequest req) {
-        return invitations.acceptByToken(req.token(), req.memberId(), req.email(), req.displayName());
+        return invitations.acceptByToken(req.token(), req.memberId(), req.email(), req.displayName(),
+                req.emailVerified());
     }
 
     public record TokenView(String email, String status, Instant expiresAt) {}
 
+    /**
+     * {@code emailVerified}: Keycloak {@code email_verified} 클레임(2026-10-24 추가). 빠지면(null — 옛 auth-server)
+     * 검증되지 않은 것으로 본다({@code platform.org.invitation.require-verified-email}, 기본 켬).
+     */
     public record AcceptRequest(@NotBlank String token, @NotNull Long memberId,
-                                @NotBlank String email, String displayName) {}
+                                @NotBlank String email, String displayName, Boolean emailVerified) {}
 }

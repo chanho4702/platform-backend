@@ -5,6 +5,7 @@ import com.platform.orgservice.domain.GrantRole;
 import com.platform.orgservice.domain.PermAction;
 import com.platform.orgservice.domain.ResourceKind;
 import com.platform.orgservice.domain.SubjectType;
+import com.platform.orgservice.creation.CreationPolicyService;
 import com.platform.orgservice.permission.PermissionFacade;
 import com.platform.orgservice.repository.GrantEntryRepository;
 import com.platform.proto.org.v1.*;
@@ -36,6 +37,7 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
     private final com.platform.orgservice.repository.TeamMemberRepository teamMembers;
     private final com.platform.orgservice.repository.MemberRepository members;
     private final com.platform.orgservice.repository.TeamRepository teams;
+    private final CreationPolicyService creation;
 
     /** 한 요청의 조회 항목 상한 — 넘으면 INVALID_ARGUMENT. 이관은 항목 단위로 쪼개서 부른다. */
     private static final int LOOKUP_LIMIT = 200;
@@ -198,9 +200,15 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
      * 권한을 그대로 들고 있을 수 있는데, 그 권한이 살아 있으면 wiki·alm은 아무 일도 없었던 것처럼
      * 문서를 열어 준다. 상태 판정을 org 한 곳에 두면 소비 서비스가 각자 기억할 필요가 없다.
      *
-     * <p>member 행이 아예 없으면(아직 org REST를 한 번도 거치지 않은 새 사용자) 상태로 거부하지 않고
-     * 평소대로 grant를 본다 — 어차피 grant가 없어 거부되고, 여기서 막으면 미러링 순서에 따라
-     * 기존 사용자가 무작위로 차단된다.
+     * <p><b>member 행이 없으면 PENDING으로 본다</b>(권한·계정 점검 Top 5-①, 2026-10-24). 예전에는 "아직 org REST를
+     * 거치지 않은 새 사용자"라며 평소대로 grant를 봤는데, 그 틈으로 승인 대기 격리를 건너뛰고 API를 직접 불러
+     * 스페이스를 만든 뒤 ADMIN을 얻는 우회가 확인됐다. 이제 행은 로그인 순간 auth-server가
+     * {@code POST /internal/org/members/ensure}로 보장하고, 배포 전부터 있던 계정은 런북 백필이 채운다.
+     * 에이전트 페르소나는 agent-service 등록이 ACTIVE 행을 만든다.
+     *
+     * <p>{@code resource_type=GLOBAL}, {@code resource_id="create:SPACE"|"create:PROJECT"}는 "새로 만들 수 있는가"
+     * 판정이다(Top 5-③) — grant가 아니라 전역 생성 설정({@link CreationPolicyService})을 본다. action은 보지 않는다
+     * (계약상 EDIT를 보낸다). 대상이 틀리면 INVALID_ARGUMENT.
      */
     @Override
     public void checkPermission(CheckPermissionRequest req, StreamObserver<CheckPermissionResponse> out) {
@@ -211,14 +219,33 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
                     .withDescription("resource_type/action은 UNSPECIFIED일 수 없습니다").asRuntimeException());
             return;
         }
+        java.util.Optional<ResourceKind> createTarget;
+        try {
+            createTarget = kind == ResourceKind.GLOBAL
+                    ? CreationPolicyService.parseCreateTarget(req.getResourceId())
+                    : java.util.Optional.empty();
+        } catch (IllegalArgumentException e) {
+            out.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+            return;
+        }
         MemberStatus status = statusOf(req.getUserId());
-        if (status != null && status != MemberStatus.ACTIVE) {
+        if (status != MemberStatus.ACTIVE) {
             // 정상적으로 판정한 거부다 — 오류 상태(UNAVAILABLE 등)로 올리지 않는다.
             // 소비자가 "org가 죽었다"와 "이 사람이 막혔다"를 구분할 수 있어야 한다.
             out.onNext(CheckPermissionResponse.newBuilder()
                     .setAllowed(false)
                     .setEffectiveRole(Role.ROLE_UNSPECIFIED)
                     .setDeniedReason(status.name())
+                    .build());
+            out.onCompleted();
+            return;
+        }
+        if (createTarget.isPresent()) {
+            CreationPolicyService.Decision c = creation.canCreate(req.getUserId(), createTarget.get());
+            out.onNext(CheckPermissionResponse.newBuilder()
+                    .setAllowed(c.allowed())
+                    .setEffectiveRole(Role.ROLE_UNSPECIFIED)
+                    .setDeniedReason(c.deniedReason())
                     .build());
             out.onCompleted();
             return;
@@ -247,14 +274,14 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
      * 사용자의 grant 목록(검색의 접근 가능 스페이스 계산 등).
      *
      * <p>{@link #checkPermission}과 같은 기준으로 계정 상태를 먼저 본다(P-02): ACTIVE가 아니면 grant를 그대로
-     * 들고 있어도 빈 목록이다. member 행이 없으면(미러링 전) 평소대로 grant를 본다 — checkPermission과 같은 이유.
+     * 들고 있어도 빈 목록이다. member 행이 없으면 PENDING과 같다(Top 5-①) — checkPermission과 같은 이유.
      */
     @Override
     public void listUserGrants(ListUserGrantsRequest req, StreamObserver<ListUserGrantsResponse> out) {
         ResourceKind kind = toKind(req.getResourceType()); // UNSPECIFIED → null → 전체
         ListUserGrantsResponse.Builder res = ListUserGrantsResponse.newBuilder();
         MemberStatus status = statusOf(req.getUserId());
-        if (status != null && status != MemberStatus.ACTIVE) {
+        if (status != MemberStatus.ACTIVE) {
             out.onNext(res.build());
             out.onCompleted();
             return;
@@ -314,9 +341,9 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
         out.onCompleted();
     }
 
-    /** 행이 없으면 null — 상태로 막지 않고 평소의 grant 판정에 맡긴다(위 주석 참고). */
+    /** 행이 없으면 PENDING — 초대·승인·부트스트랩 어느 것도 거치지 않은 계정이다(checkPermission 주석 참고). */
     private MemberStatus statusOf(long userId) {
-        return members.findById(userId).map(Member::getStatus).orElse(null);
+        return members.findById(userId).map(Member::getStatus).orElse(MemberStatus.PENDING);
     }
 
     /**

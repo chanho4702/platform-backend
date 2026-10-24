@@ -38,6 +38,13 @@ public class InvitationController {
         return invitations.create(userId(jwt), req);
     }
 
+    /** 화면이 초대 버튼·도메인 안내를 그리는 데 쓴다. 누구나 읽을 수 있다(값에 비밀이 없다). */
+    @Operation(summary = "초대 정책 조회 — 내가 초대할 수 있는지, 리소스 ADMIN 초대 경로, 허용 도메인")
+    @GetMapping("/policy")
+    public InvitationService.InvitationPolicy policy(@AuthenticationPrincipal Jwt jwt) {
+        return invitations.policy(userId(jwt));
+    }
+
     @Operation(summary = "초대 목록 조회 — 목록의 inviteUrl은 항상 null이다")
     @GetMapping
     public PageResponse<InvitationResponse> list(@AuthenticationPrincipal Jwt jwt,

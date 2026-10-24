@@ -108,9 +108,30 @@ public class InvitationService {
     @Value("${platform.org.invitation.email-match-providers:GOOGLE}")
     private String emailMatchProviders;
 
-    /** 리소스(SPACE/PROJECT) ADMIN의 초대 허용 여부. 조직 정책상 전역 관리자만이면 끈다. */
-    @Value("${platform.org.invitation.resource-admin-enabled:true}")
+    /**
+     * 리소스(SPACE/PROJECT) ADMIN의 초대 허용 여부. <b>기본 끔</b>(권한·계정 점검 Top 5-②, 2026-10-24).
+     *
+     * <p>켜 두면 "어딘가의 ADMIN"이면 외부인을 초대할 수 있는데, 스페이스 ADMIN은 스페이스를 만들기만 해도 생긴다 —
+     * 개인 스페이스 하나로 아무나 활성 구성원으로 불러들일 수 있었다. org는 스페이스가 개인용인지 모른다(resource_id만
+     * 안다)라서 개인 스페이스만 빼는 판정은 할 수 없고, 그래서 경로 자체를 기본으로 닫는다. 켜는 설치는
+     * 생성 가능 대상({@code /api/org/settings/creation})을 함께 좁힌다.
+     */
+    @Value("${platform.org.invitation.resource-admin-enabled:false}")
     private boolean resourceAdminInviteEnabled;
+
+    /**
+     * 초대할 수 있는 이메일 도메인(콤마 구분, 대소문자 무시, 정확히 일치). 비우면 제한 없음.
+     * 전역 관리자에게도 적용된다 — 조직 바깥 주소를 실수로 부르는 일을 막는 설치 정책이다.
+     */
+    @Value("${platform.org.invitation.allowed-domains:}")
+    private String allowedDomains;
+
+    /**
+     * 초대 링크 수락 때 이메일 검증을 요구하는가(점검 m5). Keycloak 비밀번호 가입은 이메일을 검증하지 않을 수 있어,
+     * 남의 주소로 가입한 뒤 그 사람의 초대 링크를 얻으면 프리셋(팀·권한)을 가로챌 수 있다. 기본 켬.
+     */
+    @Value("${platform.org.invitation.require-verified-email:true}")
+    private boolean requireVerifiedEmail;
 
     // ---------------------------------------------------------------- 생성·관리
 
@@ -120,10 +141,13 @@ public class InvitationService {
         requireCanInvite(actorId, teamPresets, grantPresets);
         validatePresetTargets(teamPresets);
 
+        List<String> emails = distinctEmails(req.emails());
+        emails.forEach(this::requireAllowedDomain); // 하나라도 막히면 아무것도 만들지 않는다(메일도 나가지 않는다)
+
         Instant now = Instant.now();
         String inviterName = displayNameOf(actorId);
         List<InvitationResponse> created = new ArrayList<>();
-        for (String rawEmail : distinctEmails(req.emails())) {
+        for (String rawEmail : emails) {
             created.add(createOne(actorId, inviterName, rawEmail, req.message(), teamPresets, grantPresets, now));
         }
         return created;
@@ -219,6 +243,7 @@ public class InvitationService {
         if (invitation.getStatus() == InvitationStatus.ACCEPTED) {
             throw new ConflictException("이미 수락된 초대입니다");
         }
+        requireAllowedDomain(invitation.getEmail()); // 초대 뒤에 허용 목록이 좁아졌을 수 있다
         String token = InvitationTokens.newToken();
         invitation.reissue(InvitationTokens.hash(token), Instant.now().plus(ttl));
         events.invitation(invitation.getId(), null, MemberEventType.INVITE_RESENT, actorId, "초대 재발송");
@@ -267,7 +292,13 @@ public class InvitationService {
      * 초대 링크 경유 수락(auth-server 내부 호출). 이메일이 초대와 다르면 거절한다 —
      * 링크를 얻은 사람이 다른 계정으로 로그인해 남의 프리셋을 가져가지 못하게 한다.
      */
-    public AcceptOutcome acceptByToken(String token, long memberId, String email, String displayName) {
+    /**
+     * @param emailVerified Keycloak {@code email_verified} 클레임. {@code require-verified-email}이 켜져 있으면
+     *                      참이 아닐 때(null 포함 — 값을 안 보내는 옛 auth-server) {@code EMAIL_UNVERIFIED}로 거절한다.
+     *                      거절해도 그 사람은 승인 대기로 남고 초대는 살아 있다(관리자 승인 또는 검증 뒤 재시도).
+     */
+    public AcceptOutcome acceptByToken(String token, long memberId, String email, String displayName,
+                                       Boolean emailVerified) {
         Invitation invitation = invitations.findByTokenHash(InvitationTokens.hash(token)).orElse(null);
         if (invitation == null) return AcceptOutcome.notFound();
         if (!invitation.isPending()) return AcceptOutcome.rejected(invitation.getStatus().name());
@@ -278,6 +309,11 @@ public class InvitationService {
         }
         if (!invitation.getEmailNorm().equals(Invitation.normalize(email))) {
             return AcceptOutcome.rejected("EMAIL_MISMATCH");
+        }
+        if (requireVerifiedEmail && !Boolean.TRUE.equals(emailVerified)) {
+            log.warn("검증되지 않은 이메일로 초대 링크 수락 시도 — 거절: invitationId={}, memberId={}",
+                    invitation.getId(), memberId);
+            return AcceptOutcome.rejected("EMAIL_UNVERIFIED");
         }
         Member member = members.findById(memberId).orElseGet(() ->
                 // 로그인 직후 호출이라 아직 org REST를 한 번도 거치지 않았을 수 있다(미러 행이 없다).
@@ -386,6 +422,45 @@ public class InvitationService {
         }
         requireResourceAdminSomewhere(actorId);
     }
+
+    /** 허용 도메인 밖이면 400. 목록이 비어 있으면 통과. */
+    private void requireAllowedDomain(String email) {
+        Set<String> allowed = allowedDomainSet();
+        if (allowed.isEmpty()) return;
+        String value = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+        int at = value.lastIndexOf('@');
+        String domain = at < 0 ? "" : value.substring(at + 1);
+        if (!allowed.contains(domain)) {
+            throw new IllegalArgumentException("초대할 수 없는 이메일 도메인입니다: " + email
+                    + " (허용: " + String.join(", ", allowed) + ")");
+        }
+    }
+
+    /** 설정의 허용 도메인(소문자, 앞의 '@' 제거). 화면이 안내 문구를 그리도록 정책 조회에도 쓴다. */
+    public Set<String> allowedDomainSet() {
+        if (allowedDomains == null || allowedDomains.isBlank()) return Set.of();
+        return Arrays.stream(allowedDomains.split(","))
+                .map(s -> s.trim().toLowerCase(Locale.ROOT))
+                .map(s -> s.startsWith("@") ? s.substring(1) : s)
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /** 초대 정책 — 화면이 초대 버튼·안내를 그리는 데 쓴다. */
+    @Transactional(readOnly = true)
+    public InvitationPolicy policy(long actorId) {
+        boolean globalAdmin = permissions.check(actorId, ResourceKind.GLOBAL, "", PermAction.ADMIN).allowed();
+        boolean canInvite = globalAdmin || (resourceAdminInviteEnabled && permissions.grantsOf(actorId, null).stream()
+                .anyMatch(g -> g.getRole() == com.platform.orgservice.domain.GrantRole.ADMIN));
+        return new InvitationPolicy(canInvite, resourceAdminInviteEnabled, List.copyOf(allowedDomainSet()));
+    }
+
+    /**
+     * @param canInvite             지금 요청한 사람이 초대를 보낼 수 있는가(리소스 ADMIN 경로는 프리셋 대상에 따라 더 막힐 수 있다)
+     * @param resourceAdminEnabled  리소스 ADMIN 초대 경로가 켜져 있는가(ORG_INVITATION_RESOURCE_ADMIN)
+     * @param allowedDomains        초대 가능 도메인(빈 배열 = 제한 없음)
+     */
+    public record InvitationPolicy(boolean canInvite, boolean resourceAdminEnabled, List<String> allowedDomains) {}
 
     private void requireResourceAdminSomewhere(long actorId) {
         boolean any = permissions.grantsOf(actorId, null).stream()

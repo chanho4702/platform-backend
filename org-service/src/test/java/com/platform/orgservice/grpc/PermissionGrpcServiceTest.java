@@ -49,6 +49,11 @@ class PermissionGrpcServiceTest {
         stub = PermissionServiceGrpc.newBlockingStub(channel);
     }
 
+    /** grant 판정만 보는 테스트의 전제 — 행이 없으면 이제 PENDING으로 거부된다(Top 5-①). */
+    private void active(long id) {
+        memberRepo.save(com.platform.orgservice.domain.Member.of(id, "활성" + id, "u" + id + "@test.com"));
+    }
+
     @AfterEach
     void teardown() {
         channel.shutdownNow();
@@ -82,6 +87,7 @@ class PermissionGrpcServiceTest {
     /** grant가 아예 없는 것과 역할이 모자란 것은 화면이 사용자에게 해야 할 말이 다르다. */
     @Test
     void CheckPermission_거부_사유가_grant_없음과_역할_부족을_구분한다() {
+        active(51L);
         CheckPermissionResponse noGrant = stub.checkPermission(CheckPermissionRequest.newBuilder()
                 .setUserId(51L).setResourceType(ResourceType.SPACE).setResourceId("sp-9")
                 .setAction(Action.VIEW).build());
@@ -141,13 +147,37 @@ class PermissionGrpcServiceTest {
                 .hasMessageContaining("INVALID_ARGUMENT");
     }
 
-    /** member 행이 아예 없으면 상태로 막지 않는다 — 미러링 순서에 따라 기존 사용자가 무작위로 차단된다. */
+    /**
+     * 권한·계정 점검 Top 5-①: member 행이 없으면 PENDING으로 거부한다. 예전에는 평소대로 grant를 봐서, 승인 대기 격리를
+     * 건너뛰고 API를 직접 불러 스페이스를 만든 뒤 ADMIN을 얻는 우회가 있었다(행은 org REST 첫 호출에서만 생겼다).
+     * 이제 행은 로그인 순간 auth-server가 /internal/org/members/ensure로 보장한다.
+     */
     @Test
-    void CheckPermission_member_행이_없으면_평소대로_판정한다() {
-        grants.save(GrantEntry.of(SubjectType.USER, 43L, ResourceKind.SPACE, "sp-1", GrantRole.EDITOR));
+    void CheckPermission_member_행이_없으면_grant가_있어도_PENDING으로_거부한다() {
+        grants.save(GrantEntry.of(SubjectType.USER, 43L, ResourceKind.SPACE, "sp-1", GrantRole.ADMIN));
+        grants.save(GrantEntry.of(SubjectType.USER, 43L, ResourceKind.GLOBAL, "", GrantRole.ADMIN));
 
         CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
                 .setUserId(43L).setResourceType(ResourceType.SPACE).setResourceId("sp-1")
+                .setAction(Action.VIEW).build());
+        assertThat(res.getAllowed()).isFalse();
+        assertThat(res.getEffectiveRole()).isEqualTo(Role.ROLE_UNSPECIFIED);
+        assertThat(res.getDeniedReason()).isEqualTo("PENDING");
+
+        CheckPermissionResponse global = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                .setUserId(43L).setResourceType(ResourceType.GLOBAL).setAction(Action.ADMIN).build());
+        assertThat(global.getAllowed()).isFalse();
+        assertThat(global.getDeniedReason()).isEqualTo("PENDING");
+    }
+
+    /** 에이전트 페르소나는 agent-service 등록이 ACTIVE 행을 만든다 — 이번 변경으로 막히지 않는다. */
+    @Test
+    void CheckPermission_등록된_에이전트는_grant대로_판정한다() {
+        memberRepo.save(com.platform.orgservice.domain.Member.agentOf(44L, "에이전트", "agent@test.com"));
+        grants.save(GrantEntry.of(SubjectType.USER, 44L, ResourceKind.SPACE, "sp-1", GrantRole.EDITOR));
+
+        CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
+                .setUserId(44L).setResourceType(ResourceType.SPACE).setResourceId("sp-1")
                 .setAction(Action.EDIT).build());
 
         assertThat(res.getAllowed()).isTrue();
@@ -155,6 +185,7 @@ class PermissionGrpcServiceTest {
 
     @Test
     void CheckPermission_grant보유자는_allowed_true() {
+        active(1L);
         grants.save(GrantEntry.of(SubjectType.USER, 1L, ResourceKind.SPACE, "sp-1", GrantRole.EDITOR));
 
         CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
@@ -167,6 +198,7 @@ class PermissionGrpcServiceTest {
 
     @Test
     void CheckPermission_무grant는_allowed_false_role_UNSPECIFIED() {
+        active(9L);
         CheckPermissionResponse res = stub.checkPermission(CheckPermissionRequest.newBuilder()
                 .setUserId(9L).setResourceType(ResourceType.SPACE).setResourceId("sp-1")
                 .setAction(Action.VIEW).build());
@@ -177,6 +209,7 @@ class PermissionGrpcServiceTest {
 
     @Test
     void ListUserGrants_리소스타입_필터가_동작한다() {
+        active(2L);
         grants.save(GrantEntry.of(SubjectType.USER, 2L, ResourceKind.SPACE, "sp-1", GrantRole.VIEWER));
         grants.save(GrantEntry.of(SubjectType.USER, 2L, ResourceKind.PROJECT, "pj-1", GrantRole.ADMIN));
 
@@ -216,14 +249,15 @@ class PermissionGrpcServiceTest {
                 .setResourceType(ResourceType.SPACE).build()).getGrantsList()).isEmpty();
     }
 
+    /** 활성 구성원은 그대로, member 행이 없는 사용자는 PENDING과 같이 빈 목록(Top 5-①, CheckPermission과 같은 기준). */
     @Test
-    void ListUserGrants_활성_구성원과_미러링_전_사용자는_그대로_본다() {
+    void ListUserGrants_활성_구성원은_그대로_보고_행이_없으면_빈_목록이다() {
         memberRepo.save(com.platform.orgservice.domain.Member.of(52L, "활성", "on@test.com"));
         grants.save(GrantEntry.of(SubjectType.USER, 52L, ResourceKind.SPACE, "12", GrantRole.VIEWER));
         grants.save(GrantEntry.of(SubjectType.USER, 53L, ResourceKind.SPACE, "13", GrantRole.VIEWER)); // member 행 없음
 
         assertThat(stub.listUserGrants(ListUserGrantsRequest.newBuilder().setUserId(52L).build()).getGrantsList()).hasSize(1);
-        assertThat(stub.listUserGrants(ListUserGrantsRequest.newBuilder().setUserId(53L).build()).getGrantsList()).hasSize(1);
+        assertThat(stub.listUserGrants(ListUserGrantsRequest.newBuilder().setUserId(53L).build()).getGrantsList()).isEmpty();
     }
 
     @Test

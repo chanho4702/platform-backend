@@ -121,7 +121,8 @@ class InternalInvitationApiTest {
         mvc.perform(post("/internal/org/invitations/accept").header(TOKEN_HEADER, TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\":\"" + token + "\",\"memberId\":" + INVITEE_ID
-                                + ",\"email\":\"" + INVITEE_EMAIL + "\",\"displayName\":\"링크사람\"}"))
+                                + ",\"email\":\"" + INVITEE_EMAIL + "\",\"displayName\":\"링크사람\""
+                                + ",\"emailVerified\":true}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accepted").value(true));
 
@@ -144,6 +145,30 @@ class InternalInvitationApiTest {
                 .andExpect(jsonPath("$.status").value("EMAIL_MISMATCH"));
 
         assertThat(invitations.findAll().getFirst().getStatus()).isEqualTo(InvitationStatus.PENDING);
+    }
+
+    /**
+     * 점검 m5: 검증되지 않은 Keycloak 이메일(비밀번호 가입)로는 링크 수락을 하지 않는다 — 남의 주소로 가입해 그 사람의
+     * 링크를 얻으면 프리셋을 가로챌 수 있다. emailVerified를 안 보내는 옛 auth-server도 같은 취급이다.
+     * 거절해도 초대는 살아 있고, 그 사람은 승인 대기로 남는다.
+     */
+    @Test
+    void 이메일이_검증되지_않았거나_값이_없으면_수락되지_않는다() throws Exception {
+        String token = inviteAndReturnToken();
+
+        for (String verified : new String[]{",\"emailVerified\":false", ""}) {
+            mvc.perform(post("/internal/org/invitations/accept").header(TOKEN_HEADER, TOKEN)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"token\":\"" + token + "\",\"memberId\":" + INVITEE_ID
+                                    + ",\"email\":\"" + INVITEE_EMAIL + "\"" + verified + "}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.accepted").value(false))
+                    .andExpect(jsonPath("$.status").value("EMAIL_UNVERIFIED"));
+        }
+
+        assertThat(invitations.findAll().getFirst().getStatus()).isEqualTo(InvitationStatus.PENDING);
+        assertThat(members.findById(INVITEE_ID).map(m -> m.getStatus()).orElse(MemberStatus.PENDING))
+                .isEqualTo(MemberStatus.PENDING);
     }
 
     /** 토큰 미설정(빈 문자열)이면 헤더와 무관하게 닫힌다 — env를 빼먹은 배포가 내부 경로를 열지 않는다. */

@@ -204,9 +204,13 @@ class InvitationFlowTest {
                 .andExpect(jsonPath("$.error").value("초대 권한이 없습니다"));
     }
 
-    /** 리소스 ADMIN도 초대할 수 있지만, 프리셋은 자기가 관리하는 리소스로만 좁혀진다. */
+    /**
+     * 권한·계정 점검 Top 5-②: 리소스 ADMIN 초대 경로는 기본으로 닫혀 있다. 스페이스 ADMIN은 스페이스를 만들기만 해도
+     * 생겨서, 열어 두면 개인 스페이스 하나로 외부인을 활성 구성원으로 불러들일 수 있었다.
+     * (켠 설치의 동작은 {@link InvitationResourceAdminEnabledTest})
+     */
     @Test
-    void 스페이스_ADMIN은_자기_스페이스_프리셋으로만_초대한다() throws Exception {
+    void 기본_설정에서는_스페이스_ADMIN도_초대할_수_없다() throws Exception {
         active(members, 602L, "SpaceAdmin");
         grants.save(GrantEntry.of(SubjectType.USER, 602L, ResourceKind.SPACE, "sp-1",
                 com.platform.orgservice.domain.GrantRole.ADMIN));
@@ -215,19 +219,17 @@ class InvitationFlowTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"emails\":[\"a@test.com\"],"
                                 + "\"grants\":[{\"scope\":\"SPACE\",\"resourceId\":\"sp-1\",\"role\":\"VIEWER\"}]}"))
-                .andExpect(status().isCreated());
-
-        mvc.perform(post("/api/org/invitations").with(asUser(602L, "SpaceAdmin"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"emails\":[\"b@test.com\"],"
-                                + "\"grants\":[{\"scope\":\"SPACE\",\"resourceId\":\"sp-2\",\"role\":\"VIEWER\"}]}"))
-                .andExpect(status().isForbidden());
-
-        mvc.perform(post("/api/org/invitations").with(asUser(602L, "SpaceAdmin"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"emails\":[\"c@test.com\"],"
-                                + "\"grants\":[{\"scope\":\"GLOBAL\",\"role\":\"ADMIN\"}]}"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error").value("전역 역할은 전역 관리자만 부여할 수 있습니다"));
+                .andExpect(jsonPath("$.error").value("초대 권한이 없습니다"));
+        assertThat(invitations.findAll()).isEmpty();
+
+        mvc.perform(get("/api/org/invitations/policy").with(asUser(602L, "SpaceAdmin")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canInvite").value(false))
+                .andExpect(jsonPath("$.resourceAdminEnabled").value(false))
+                .andExpect(jsonPath("$.allowedDomains").isEmpty());
+        mvc.perform(get("/api/org/invitations/policy").with(asUser(ADMIN_ID, "Admin")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canInvite").value(true));
     }
 }
