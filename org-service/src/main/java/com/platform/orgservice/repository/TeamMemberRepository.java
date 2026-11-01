@@ -19,6 +19,9 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
 
     List<TeamMember> findByMemberId(Long memberId);
 
+    /** 구성원 CSV 내보내기 — 여러 사람의 소속을 한 번에(사람마다 열면 N+1). 호출측이 IN 목록을 잘라 넘긴다. */
+    List<TeamMember> findByMemberIdIn(java.util.Collection<Long> memberIds);
+
     /** 팀 목록의 memberCount — 팀마다 구성원을 열지 않으려고 한 번에 센다(N+1 방지). */
     @Query("select tm.teamId, count(tm) from TeamMember tm group by tm.teamId")
     List<Object[]> countByTeam();

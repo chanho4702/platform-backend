@@ -14,10 +14,18 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
@@ -67,6 +75,32 @@ public class MemberController {
                                              @Parameter(description = "페이지 크기")
                                              @RequestParam(defaultValue = "20") int size) {
         return admin.search(statusFilter(status), kindFilter(kind), q, page, size);
+    }
+
+    /**
+     * 구성원 CSV 내보내기(전역 관리자). 필터 규칙은 목록과 같다 — 화면이 지금 거른 조건을 그대로 싣는다.
+     *
+     * <p>{@code produces}를 달지 않는다 — 달면 403·400 같은 오류의 {@code {"error"}} JSON 본문이 협상에서 막혀
+     * 406으로 바뀐다. Content-Type은 응답에서 직접 정한다.
+     */
+    @Operation(summary = "구성원 CSV 내보내기 — 전역 관리자 전용. 이름·이메일·상태·팀, UTF-8 BOM")
+    @ApiResponse(responseCode = "200", description = "CSV 파일",
+            content = @Content(mediaType = "text/csv", schema = @Schema(type = "string", format = "binary")))
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(@AuthenticationPrincipal Jwt jwt,
+                                         @Parameter(description = "상태 필터 — 목록과 같은 규칙. 미지정이면 ACTIVE, ALL이면 전부.")
+                                         @RequestParam(required = false) String status,
+                                         @Parameter(description = "종류 필터 — 목록과 같은 규칙. 미지정이면 HUMAN, ALL이면 전부.")
+                                         @RequestParam(required = false) String kind,
+                                         @Parameter(description = "이름·이메일 부분 검색어")
+                                         @RequestParam(required = false) String q) {
+        byte[] csv = admin.exportCsv(userId(jwt), statusFilter(status), kindFilter(kind), q);
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename("members.csv").build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(csv);
     }
 
     /** 승인 대기 목록. {@code /{id}}보다 먼저 선언해 "pending"이 id로 해석되지 않게 한다. */

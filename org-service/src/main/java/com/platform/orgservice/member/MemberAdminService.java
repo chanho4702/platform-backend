@@ -127,6 +127,57 @@ public class MemberAdminService {
                 .stream().map(MemberEventResponse::from).toList();
     }
 
+    /** CSV 열 — 화면(F-25)의 "이름·이메일·상태·팀". 상태는 관리 화면과 같은 한국어 라벨로 쓴다. */
+    static final List<String> EXPORT_HEADER = List.of("이름", "이메일", "상태", "팀");
+    private static final int EXPORT_IN_CHUNK = 1000;
+
+    /**
+     * 구성원 CSV 내보내기(전역 관리자). 필터 규칙은 목록과 같고 정렬도 같다(이름·id) — 화면에서 보던 순서 그대로 받는다.
+     *
+     * <p>팀 열에는 전체 구성원(EVERYONE) 팀을 넣지 않는다 — 활성 사람은 전원 소속이라 정보가 없고 열만 길어진다.
+     * 소속은 IN 목록으로 한 번에 읽는다(사람마다 열면 N+1). 행 수 상한은 두지 않는다 — 싱글 테넌트 조직 규모다.
+     */
+    @Transactional(readOnly = true)
+    public byte[] exportCsv(long actorId, MemberStatus status, MemberKind kind, String q) {
+        permissions.requireGlobalAdmin(actorId);
+        List<Member> found = members.findAll(specFor(status, kind, q));
+
+        List<Long> ids = found.stream().map(Member::getId).toList();
+        List<TeamMember> memberships = new ArrayList<>();
+        for (int from = 0; from < ids.size(); from += EXPORT_IN_CHUNK) {
+            memberships.addAll(teamMembers.findByMemberIdIn(
+                    ids.subList(from, Math.min(from + EXPORT_IN_CHUNK, ids.size()))));
+        }
+        Map<Long, Team> teamById = new LinkedHashMap<>();
+        teams.findAllById(memberships.stream().map(TeamMember::getTeamId).distinct().toList())
+                .forEach(t -> teamById.put(t.getId(), t));
+        Map<Long, List<String>> teamNames = new LinkedHashMap<>();
+        for (TeamMember tm : memberships) {
+            Team team = teamById.get(tm.getTeamId());
+            if (team == null || team.isEveryone()) continue;
+            teamNames.computeIfAbsent(tm.getMemberId(), k -> new ArrayList<>()).add(team.getName());
+        }
+
+        List<List<String>> rows = new ArrayList<>(found.size());
+        for (Member m : found) {
+            List<String> names = new ArrayList<>(teamNames.getOrDefault(m.getId(), List.of()));
+            names.sort(String::compareTo);
+            rows.add(java.util.Arrays.asList(m.getDisplayName(), m.getEmail(),
+                    statusLabel(m.getStatus()), String.join("; ", names)));
+        }
+        return com.platform.orgservice.common.Csv.write(EXPORT_HEADER, rows);
+    }
+
+    /** 관리 화면(@chanho/org-admin MEMBER_STATUS_LABEL)과 같은 말. */
+    static String statusLabel(MemberStatus status) {
+        return switch (status) {
+            case PENDING -> "승인 대기";
+            case ACTIVE -> "활성";
+            case SUSPENDED -> "일시 정지";
+            case DEACTIVATED -> "비활성";
+        };
+    }
+
     // ---------------------------------------------------------------- 변경
 
     public MemberDetailResponse patch(long actorId, long memberId, MemberPatchRequest req) {

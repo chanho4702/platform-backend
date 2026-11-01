@@ -164,6 +164,7 @@ GLOBAL grant 조회로 처리해 **전원 거부**(fail-closed)하므로 **org�
 | `GET` | `/me` | 인증(PENDING 포함) | → `{id, displayName, email, avatarUrl, avatarUpdatedAt, status, kind, joinedVia, globalRoles[], teams[{id,name,kind,role}]}` |
 | `GET` | `/members` | 인증 | **배열**(기존 계약 유지). `status`·`kind`·`q`(이름·이메일 부분일치) 선택, 기본 `status=ACTIVE&kind=HUMAN`. 전부는 `status=ALL&kind=ALL` |
 | `GET` | `/members/page` | 인증 | 같은 필터 + `page`·`size` → `{items[], page, size, total}` |
+| `GET` | `/members/export` | GLOBAL ADMIN | 같은 필터(`status`·`kind`·`q`) → `text/csv`(UTF-8 BOM, CRLF) `members.csv` — 열 `이름,이메일,상태,팀`, 상태는 한국어 라벨, 팀은 `; ` 구분(전체 구성원 팀 제외). `= + - @`·탭·CR로 시작하는 셀은 앞에 `'`(수식 주입 차단). 오류는 `{error}` JSON |
 | `GET` | `/members/pending` | GLOBAL ADMIN | 승인 대기 목록 |
 | `GET` | `/members/{id}` | 인증 | 상세 + `teams[]`, `grants[]`는 본인·GLOBAL ADMIN에게만(아니면 필드 없음) |
 | `PATCH` | `/members/{id}` | GLOBAL ADMIN | `{status}` → 상세. **표시 이름은 못 바꾼다** — `MemberMirrorFilter`가 요청마다 JWT `name`으로 덮어쓴다(원천은 Keycloak) |
@@ -414,6 +415,8 @@ input SearchInput {
   spaceIds: [ID!]            # 접근 가능한 스페이스와 교집합 — 여기로 권한을 넓힐 수는 없다
   docTypes: [DocType!]
   includeDrafts: Boolean = false
+  pageTypes: [PageType!]     # PAGE·FOLDER·BLOG. 비우면 전부. PAGE 결과에만 걸리고 첨부는 그대로(위키 라이트 검색과 같은 의미)
+  authorIds: [ID!]  updatedAfter: String  updatedBefore: String  labels: [String!]  sort: SearchSort
   page: Int = 0
   size: Int = 20             # 상한 100 (넘기면 100으로 잘린다)
 }
