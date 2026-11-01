@@ -135,6 +135,10 @@ public class OpenSearchQueryService {
         if (!labels.isEmpty()) {
             filters.add(terms("labels", labels.stream().map(FieldValue::of).toList()));
         }
+        Set<String> pageTypes = input.requestedPageTypes();
+        if (!pageTypes.isEmpty()) {
+            filters.add(pageTypeFilter(pageTypes));
+        }
         Long after = input.updatedAfterMillis();
         Long before = input.updatedBeforeMillis();
         if (after != null || before != null) {
@@ -168,6 +172,23 @@ public class OpenSearchQueryService {
             if (before != null) r.lte(org.opensearch.client.json.JsonData.of(before));
             return r;
         }));
+    }
+
+    /**
+     * 문서 종류 필터. 라이트 검색과 같게 <b>페이지에만</b> 건다 — 첨부(docType≠PAGE)는 통과시킨다.
+     * 그래서 "페이지가 아니거나, 페이지면 종류가 맞는 것"을 should 두 개(최소 하나 일치)로 쓴다.
+     * 색인의 {@code type}은 소문자다(WikiDocuments).
+     */
+    private static Query pageTypeFilter(Set<String> pageTypes) {
+        List<FieldValue> values = pageTypes.stream()
+                .map(type -> FieldValue.of(type.toLowerCase(java.util.Locale.ROOT)))
+                .toList();
+        Query notPage = Query.of(q -> q.bool(b -> b.mustNot(n -> n.term(t -> t
+                .field("docType").value(FieldValue.of(DocType.PAGE.name()))))));
+        return Query.of(q -> q.bool(b -> b
+                .should(notPage)
+                .should(terms("type", values))
+                .minimumShouldMatch("1")));
     }
 
     private static Query terms(String field, List<FieldValue> values) {

@@ -516,6 +516,53 @@ class GraphQlSearchIntegrationTest {
     }
 
     /**
+     * 문서 종류 필터(pageTypes) — 위키 라이트 검색(wiki-backend 285771b)과 같은 의미: 비우면 전부,
+     * PAGE 결과에만 걸리고 첨부는 그대로 남는다(첨부는 docTypes로 거른다).
+     */
+    @Test
+    void pageTypes로_문서_종류를_거르고_첨부는_그대로_둔다() throws Exception {
+        permissions.allowSpaces(USER, 10L);
+        indexes.upsertPage(new PageDoc(
+                PageDoc.DOC_TYPE, 2501L, 10L, "space-10", "스페이스 10",
+                "종류 문서", "guide", "page", "published", 1, USER, 1_000L, List.of()), nextVersion());
+        indexes.upsertPage(new PageDoc(
+                PageDoc.DOC_TYPE, 2502L, 10L, "space-10", "스페이스 10",
+                "종류 블로그", "guide", "blog", "published", 1, USER, 1_000L, List.of()), nextVersion());
+        indexes.upsertAttachment(new AttachmentDoc(
+                AttachmentDoc.DOC_TYPE, 2503L, 2501L, 10L, "space-10", "스페이스 10",
+                "guide.pdf", "application/pdf", 100L, USER, 1_000L), nextVersion());
+        refresh();
+
+        performSearch(USER, input("guide"))
+                .andExpect(jsonPath("$.data.search.total").value(3));
+
+        Map<String, Object> blog = input("guide");
+        blog.put("pageTypes", List.of("BLOG"));
+        performSearch(USER, blog)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.search.total").value(2))
+                .andExpect(jsonPath("$.data.search.hits[?(@.docType=='PAGE')].id").value(org.hamcrest.Matchers.contains("2502")))
+                .andExpect(jsonPath("$.data.search.hits[?(@.docType=='ATTACHMENT')].id").value(org.hamcrest.Matchers.contains("2503")));
+
+        Map<String, Object> blogPagesOnly = input("guide");
+        blogPagesOnly.put("pageTypes", List.of("BLOG"));
+        blogPagesOnly.put("docTypes", List.of("PAGE"));
+        performSearch(USER, blogPagesOnly)
+                .andExpect(jsonPath("$.data.search.total").value(1))
+                .andExpect(jsonPath("$.data.search.hits[0].id").value("2502"));
+
+        Map<String, Object> both = input("guide");
+        both.put("pageTypes", List.of("PAGE", "BLOG"));
+        performSearch(USER, both)
+                .andExpect(jsonPath("$.data.search.total").value(3));
+
+        Map<String, Object> empty = input("guide");
+        empty.put("pageTypes", List.of());
+        performSearch(USER, empty)
+                .andExpect(jsonPath("$.data.search.total").value(3));
+    }
+
+    /**
      * 라벨 필터(W22). 라벨은 wiki-backend가 gRPC 페이로드에 실어 보내고 색인 문서에 keyword로 들어간다 —
      * 라벨이 바뀌면 그 페이지가 재색인된다(LabelService).
      */

@@ -14,6 +14,8 @@ input SearchInput {
   docTypes: [DocType!]
   "기본은 게시된 문서만. 초안은 색인에는 있고 질의에서 걸러진다"
   includeDrafts: Boolean = false
+  "문서 종류(PAGE·FOLDER·BLOG). 비우면 전부. PAGE 결과에만 걸린다(첨부는 docTypes로 거른다) — 위키 라이트 검색과 같은 의미"
+  pageTypes: [PageType!]
   "마지막 수정자 — 첨부에는 없는 필드라 페이지만 걸린다"
   authorIds: [ID!]
   "이 시각 이후 수정된 문서만(ISO-8601 시각 또는 날짜)"

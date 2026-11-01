@@ -21,8 +21,16 @@ public record SearchInput(
         /** 정렬. null이면 관련도. */
         SearchSort sort,
         Integer page,
-        Integer size
+        Integer size,
+        /**
+         * 문서 종류 필터 — PAGE·FOLDER·BLOG의 부분집합. 비우면 전부. PAGE 결과에만 걸리고 첨부는 그대로 둔다
+         * (첨부는 docTypes로 거른다). 위키 라이트 검색(wiki-backend SearchInput.pageTypes)과 같은 의미다.
+         */
+        List<String> pageTypes
 ) {
+    /** 색인의 {@code type} 값(WikiDocuments가 소문자로 넣는다). 정본은 wiki의 PageType 열거. */
+    static final Set<String> PAGE_TYPES = Set.of("PAGE", "FOLDER", "BLOG");
+
     static final int DEFAULT_SIZE = 20;
     static final int MAX_SIZE = 100;
 
@@ -86,6 +94,23 @@ public record SearchInput(
                 .filter(value -> !value.isEmpty())
                 .distinct()
                 .toList();
+    }
+
+    /**
+     * 요청한 문서 종류(대문자, 중복 제거). 비었으면 거르지 않는다. 모르는 값은 조용히 버리지 않고 거부한다 —
+     * 라이트 검색과 같은 문구.
+     */
+    public Set<String> requestedPageTypes() {
+        if (pageTypes == null || pageTypes.isEmpty()) return Set.of();
+        Set<String> out = new LinkedHashSet<>();
+        for (String raw : pageTypes) {
+            String value = raw == null ? "" : raw.trim().toUpperCase(java.util.Locale.ROOT);
+            if (!PAGE_TYPES.contains(value)) {
+                throw new IllegalArgumentException("pageTypes는 PAGE·FOLDER·BLOG 중에서 고르세요: " + raw);
+            }
+            out.add(value);
+        }
+        return Set.copyOf(out);
     }
 
     public SearchSort normalizedSort() {

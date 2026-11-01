@@ -26,7 +26,7 @@ class SearchGraphQlControllerReadinessTest {
         SearchGraphQlController controller = new SearchGraphQlController(search, readiness);
 
         SearchInput input = new SearchInput(
-                "문서", null, null, null, null, null, null, null, null, null, null);
+                "문서", null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> controller.search(input, null))
                 .isInstanceOf(ServiceUnavailableException.class)
