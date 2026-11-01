@@ -1,5 +1,6 @@
 package com.platform.common.web;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -22,7 +23,12 @@ import java.util.Map;
  *
  * <p>5xx는 원인을 본문에 싣지 않고 로그에만 남긴다. 4xx 사유는 서비스가 쓴 한국어면 그대로, 아니면 상태별 문구다.
  * 서비스가 자기 {@code ErrorController} 빈을 두면 이 컨트롤러는 물러난다.
+ *
+ * <p>{@code @Hidden} — 오류 디스패치 경로는 공개 API가 아니다. 붙이기 전에는 springdoc을 쓰는 서비스마다
+ * {@code addHiddenRestControllers(PlatformErrorController.class)}를 따로 걸어야 했고, 빠뜨린 서비스의 문서에는
+ * 메서드 일곱 개짜리 {@code /error}가 섞였다.
  */
+@Hidden
 @RestController
 public class PlatformErrorController implements ErrorController {
 

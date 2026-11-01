@@ -21,6 +21,10 @@ dependencies {
     // 서비스 간 gRPC 인증 인터셉터(P-01). gRPC가 classpath에 있는 서비스에서만 자동 구성이 켜진다.
     compileOnly platform(libs.grpc.bom)
     compileOnly libs.grpc.api
+    // /error 컨트롤러를 OpenAPI 문서에서 숨기는 @Hidden 하나만 쓴다. springdoc을 쓰는 서비스(org·wiki·alm·migration)에는
+    // 런타임에 이미 있고, 없는 서비스에서는 클래스의 어노테이션이 조용히 무시된다(어노테이션은 링크 실패를 내지 않는다).
+    // 버전은 springdoc 3.0.3이 끌어오는 값과 같게 둔다.
+    compileOnly 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.47'
 
     testImplementation platform("org.springframework.boot:spring-boot-dependencies:${bootVersion}")
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -32,6 +36,8 @@ dependencies {
     testImplementation 'org.springframework:spring-orm'
     testImplementation project(':common-proto')
     testImplementation libs.grpc.inprocess
+    // /error가 OpenAPI 스펙에 나오지 않는지 실제 springdoc으로 확인한다(PlatformErrorControllerOpenApiTest).
+    testImplementation 'org.springdoc:springdoc-openapi-starter-webmvc-api:3.0.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
