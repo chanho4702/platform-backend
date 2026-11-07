@@ -68,7 +68,8 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()
                         // 헬스·빌드 정보. 내부 전용 체인(/internal/org/**)에는 걸리지 않으므로 여기서 연다.
                         // 게이트웨이가 상태판을 그리려고 토큰 없이 부르고, 나머지 /actuator/**는 애초에 노출하지 않는다.
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // prometheus는 Alloy가 도커 내부망에서 긁는 메트릭이다.
+                        .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                         .anyRequest().authenticated())
                 // 401/403에도 플랫폼 본문 {"error"}를 싣는다(P-11). Security 기본은 본문이 없다.
                 .oauth2ResourceServer(oauth2 -> oauth2

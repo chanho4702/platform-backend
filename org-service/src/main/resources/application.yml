@@ -45,12 +45,16 @@ springdoc:
   override-with-generic-response: false
 
 # Actuator — 내부 네트워크 전용이다. 게이트웨이 라우트는 /api/**뿐이고 nginx도 /actuator를 넘기지 않는다.
-# health와 info 둘만 노출하고, 상세(components.db)는 게이트웨이 상태판이 DB 상태를 읽으므로 항상 낸다.
+# health·info·prometheus만 노출하고, 상세(components.db)는 게이트웨이 상태판이 DB 상태를 읽으므로 항상 낸다.
+# prometheus는 Alloy가 도커 내부망에서 긁는 메트릭이다(infra-settings observability).
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}   # 모든 미터에 서비스 이름 태그(Grafana 서비스별 분리)
   endpoint:
     health:
       show-details: always

@@ -21,12 +21,17 @@ spring:
           jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/.well-known/jwks.json}
 
 # Actuator — 내부 네트워크 전용이다(게이트웨이 라우트는 /api·/graphql뿐, nginx도 /actuator를 넘기지 않는다).
-# health와 info 둘만. info의 build.version을 헬스 집계 표의 "버전" 열이 읽는다.
+# health·info·prometheus만. info의 build.version을 헬스 집계 표의 "버전" 열이 읽는다.
+# prometheus는 Alloy가 도커 내부망에서 긁는다. 게이트웨이 search 라우트(StripPrefix=2)로는 닿지 않게
+# 게이트웨이가 /api/search/actuator/**를 denyAll 한다.
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}   # 모든 미터에 서비스 이름 태그(Grafana 서비스별 분리)
   endpoint:
     health:
       show-details: always

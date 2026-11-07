@@ -9,14 +9,16 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 게이트웨이 상태판이 읽는 표면. 토큰 없이 200이어야 하고(프로브에는 자격증명이 없다),
- * 노출한 것은 health·info 둘뿐이어야 한다.
+ * 노출한 것은 health·info·prometheus뿐이어야 한다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -43,9 +45,18 @@ class ActuatorEndpointTest {
         mvc.perform(get("/actuator/info")).andExpect(status().isOk());
     }
 
+    /** 메트릭은 Alloy가 내부망에서 토큰 없이 긁는다 — 서비스 태그가 붙어 나와야 한다. */
+    @Test
+    void prometheus는_토큰_없이_200이고_서비스_태그가_붙는다() throws Exception {
+        mvc.perform(get("/actuator/prometheus"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("jvm_memory_used_bytes")))
+                .andExpect(content().string(containsString("application=\"org-service\"")));
+    }
+
     /**
-     * health·info 밖은 열지 않는다. 노출 목록에 없어 매핑 자체가 없고, 그 앞에서 시큐리티가
-     * 먼저 401로 끊는다(permitAll을 그 둘에만 줬으므로) — 어느 쪽이든 내용은 나가지 않는다.
+     * health·info·prometheus 밖은 열지 않는다. 노출 목록에 없어 매핑 자체가 없고, 그 앞에서 시큐리티가
+     * 먼저 401로 끊는다(permitAll을 그 셋에만 줬으므로) — 어느 쪽이든 내용은 나가지 않는다.
      */
     @Test
     void 다른_액추에이터_엔드포인트는_노출되지_않는다() throws Exception {

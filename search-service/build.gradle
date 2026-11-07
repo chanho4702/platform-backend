@@ -39,6 +39,8 @@ dependencies {
     // health·info 노출 — 헬스 집계가 다른 서비스에 요구하는 것과 같은 계약(build.version 포함).
     // 그전까지는 actuator가 없어 HealthCatalog가 루트(/) 폴백으로 살아있음만 봤고 버전 열이 비었다.
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // /actuator/prometheus — Alloy가 도커 내부망에서 긁어 Prometheus로 보낸다(infra-settings observability).
+    implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation libs.grpc.netty.shaded
     implementation "org.opensearch.client:opensearch-java:${openSearchVersion}"
     implementation 'com.fasterxml.jackson.core:jackson-databind'
