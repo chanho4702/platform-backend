@@ -9,7 +9,7 @@
 | `com.platform.common.web.PlatformApiExceptionHandler` | 위 예외 + 검증 실패·본문 파싱 실패·타입 불일치·파라미터 누락 → 400, 낙관적 락 → 409, `AccessDeniedException` → 403. 본문은 플랫폼 계약 `{"error": "메시지"}` |
 | `com.platform.common.web.PlatformErrorController` | `/error`(미처리 예외·405·415·`@ResponseStatus` 등)도 `{"error"}`. 5xx는 고정 문구, 원인은 로그로(0.17.0) |
 | `com.platform.common.security.PlatformSecurityErrorHandlers` | 보안 체인 401/403에 `{"error"}` 본문을 싣는 엔트리포인트·거부 처리기 — 서비스가 체인에 꽂는다(0.17.0) |
-| `com.platform.common.security.InternalTokenFilter` | `/internal/**` 공유 토큰 게이트 단일 구현 — 헤더명 지정(기본 `X-Internal-Token`)·trim·상수시간·fail-closed. **빈으로 등록하지 말 것**(0.17.0) |
+| `com.platform.common.security.InternalTokenFilter` | `/internal/**` 공유 토큰 게이트 단일 구현 — 헤더명 지정(기본 `X-Internal-Token`)·trim·상수시간·fail-closed. **빈으로 등록하지 말 것**(0.17.0). 0.18.0: 토큰 값에 콤마 구분 여러 값(`신,구` — 무중단 회전), `InternalTokenFilter.byPath(헤더, LinkedHashMap<경로패턴, 토큰목록>, 문구)`로 경로별 토큰 집합(처음 맞는 패턴, 안 맞는 경로는 403) |
 | `com.platform.common.grpc.*` | 서비스 간 gRPC 토큰 인터셉터 빈 `platformGrpcClientInterceptor`(채널에 `.intercept`)·`platformGrpcServerInterceptor`(off/monitor/enforce). env `PLATFORM_GRPC_TOKEN`·`PLATFORM_GRPC_AUTH_MODE`(0.17.0) |
 
 서비스별 예외(예: wiki `MoveImpactException`)는 서비스 안의 `@RestControllerAdvice`에 `@Order(0)`으로 두면
