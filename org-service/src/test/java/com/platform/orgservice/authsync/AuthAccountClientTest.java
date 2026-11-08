@@ -81,6 +81,20 @@ class AuthAccountClientTest {
         assertThat(new AuthAccountClient(base(), "", null, "").isConfigured()).isFalse();
     }
 
+    /** 회전 중 폴백 값에 수신용 `신,구`가 들어 있어도 목록째 보내지 않고 비어 있지 않은 첫 항목만 싣는다(auth-server와 같은 규칙). */
+    @Test
+    void 토큰이_콤마_목록이면_비어_있지_않은_첫_항목만_싣는다() {
+        assertThat(new AuthAccountClient(base(), "", "", " , new-tok , old-tok").setActive(1L, false))
+                .isEqualTo(AuthAccountClient.Result.APPLIED);
+        assertThat(token.get()).isEqualTo("new-tok");
+
+        assertThat(new AuthAccountClient(base(), "", "sync-new,sync-old", "legacy").setActive(1L, false))
+                .isEqualTo(AuthAccountClient.Result.APPLIED);
+        assertThat(token.get()).isEqualTo("sync-new");
+
+        assertThat(new AuthAccountClient(base(), "", " , ", "").isConfigured()).isFalse();
+    }
+
     @Test
     void 사용자_없음과_실패를_구분한다() {
         AuthAccountClient client = new AuthAccountClient(base(), "", "tok");

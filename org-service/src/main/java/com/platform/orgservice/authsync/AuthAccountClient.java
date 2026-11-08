@@ -55,10 +55,13 @@ public class AuthAccountClient {
         this(configuredUri, jwkSetUri, InternalTokenRoutes.orLegacy(syncToken, legacyToken));
     }
 
-    /** 토큰을 이미 고른 생성자(테스트·하위 클래스용). */
+    /**
+     * 토큰을 이미 고른 생성자(테스트·하위 클래스용). 값이 콤마 목록이면(회전 중 수신용 `신,구`가 폴백 값에 들어 있는 경우)
+     * 비어 있지 않은 첫 항목 하나만 싣는다 — auth-server 아웃바운드와 같은 규칙.
+     */
     public AuthAccountClient(String configuredUri, String jwkSetUri, String token) {
         this.baseUri = resolveBase(configuredUri, jwkSetUri);
-        this.token = token == null ? "" : token.trim();
+        this.token = firstToken(token);
         // auth-server가 멈춰도 워커 스레드가 묶이지 않게(다음 주기에 다시 보낸다)
         HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
@@ -104,6 +107,15 @@ public class AuthAccountClient {
             log.warn("auth-server 계정 상태 반영 실패: user={} active={} {}", userId, active, e.getClass().getSimpleName());
             return Result.FAILED;
         }
+    }
+
+    static String firstToken(String raw) {
+        if (raw == null) return "";
+        for (String part : raw.split(",")) {
+            String t = part.trim();
+            if (!t.isEmpty()) return t;
+        }
+        return "";
     }
 
     static String resolveBase(String configured, String jwkSetUri) {
