@@ -67,6 +67,20 @@ class AuthAccountClientTest {
         assertThat(body.get()).isEqualTo("{\"active\":false}");
     }
 
+    /** N5 — org→auth 토큰은 인바운드와 분리된 AUTH_ACCOUNT_SYNC_TOKEN. 비어 있으면 옛 공유 토큰(ORG_INTERNAL_TOKEN). */
+    @Test
+    void 전용_동기화_토큰이_있으면_그것을_비면_옛_공유_토큰을_싣는다() {
+        assertThat(new AuthAccountClient(base(), "", " sync-tok ", "legacy").setActive(1L, false))
+                .isEqualTo(AuthAccountClient.Result.APPLIED);
+        assertThat(token.get()).isEqualTo("sync-tok");
+
+        assertThat(new AuthAccountClient(base(), "", "  ", "legacy").setActive(1L, false))
+                .isEqualTo(AuthAccountClient.Result.APPLIED);
+        assertThat(token.get()).isEqualTo("legacy");
+
+        assertThat(new AuthAccountClient(base(), "", null, "").isConfigured()).isFalse();
+    }
+
     @Test
     void 사용자_없음과_실패를_구분한다() {
         AuthAccountClient client = new AuthAccountClient(base(), "", "tok");

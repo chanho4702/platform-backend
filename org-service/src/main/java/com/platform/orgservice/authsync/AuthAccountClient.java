@@ -1,6 +1,8 @@
 package com.platform.orgservice.authsync;
 
+import com.platform.orgservice.config.InternalTokenRoutes;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -18,8 +20,8 @@ import java.util.Map;
 /**
  * auth-server 계정 상태 내부 API 클라이언트(P-02) — {@code PUT /internal/users/{id}/status {"active": bool}}.
  *
- * <p>인증은 auth-server가 이미 org 초대 API에 쓰는 것과 같은 공유 토큰({@code ORG_INTERNAL_TOKEN},
- * 헤더 {@code X-Internal-Token})이다 — 두 서비스 모두 이 env를 이미 받고 있어 배포 배선이 늘지 않는다.
+ * <p>인증은 헤더 {@code X-Internal-Token}에 싣는 전용 토큰 {@code AUTH_ACCOUNT_SYNC_TOKEN}(N5, 2026-11-08)이다.
+ * 비어 있으면 예전처럼 auth-server가 org 초대 API에 쓰는 것과 같은 공유 토큰 {@code ORG_INTERNAL_TOKEN}을 싣는다.
  *
  * <p>auth-server 주소는 {@code platform.org.auth-sync.uri}(env {@code AUTH_SERVICE_URI}). 비어 있으면 JWKS 주소
  * ({@code AUTH_JWKS_URI}, 이미 auth-server를 가리킨다)의 오리진을 쓴다 — compose를 고치지 않아도 동작하게.
@@ -41,9 +43,20 @@ public class AuthAccountClient {
     private final String token;
     private final RestClient restClient;
 
+    /**
+     * N5 — 토큰은 인바운드 집합과 분리된 {@code platform.internal.auth-account-sync-token}
+     * ({@code AUTH_ACCOUNT_SYNC_TOKEN})이고, 비어 있으면(빈 문자열 포함) 옛 공유 토큰 {@code ORG_INTERNAL_TOKEN}.
+     */
+    @Autowired
     public AuthAccountClient(@Value("${platform.org.auth-sync.uri:}") String configuredUri,
                              @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}") String jwkSetUri,
-                             @Value("${platform.org.internal-token:}") String token) {
+                             @Value("${platform.internal.auth-account-sync-token:}") String syncToken,
+                             @Value("${platform.org.internal-token:}") String legacyToken) {
+        this(configuredUri, jwkSetUri, InternalTokenRoutes.orLegacy(syncToken, legacyToken));
+    }
+
+    /** 토큰을 이미 고른 생성자(테스트·하위 클래스용). */
+    public AuthAccountClient(String configuredUri, String jwkSetUri, String token) {
         this.baseUri = resolveBase(configuredUri, jwkSetUri);
         this.token = token == null ? "" : token.trim();
         // auth-server가 멈춰도 워커 스레드가 묶이지 않게(다음 주기에 다시 보낸다)
@@ -59,6 +72,11 @@ public class AuthAccountClient {
 
     String baseUri() {
         return baseUri;
+    }
+
+    /** 실제로 싣는 토큰 — 배선(새 변수·폴백) 검증용. */
+    public String token() {
+        return token;
     }
 
     /** 계정을 열거나(active=true) 닫는다(false — auth-server가 RT 전부 폐기·PAT 교환 거부). 멱등. */

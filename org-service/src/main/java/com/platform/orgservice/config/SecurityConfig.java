@@ -36,17 +36,25 @@ public class SecurityConfig {
      * <p>필터를 빈으로 등록하지 않고 {@code new}로 만드는 이유: Boot는 {@code Filter} 빈을
      * 서블릿 컨테이너 레벨({@code /*})에도 자동 등록해, 사용자 API 전체가 403이 되는 사고가
      * auth-server에서 실측됐다. 이 체인에만 있는 지역 인스턴스로 둔다.
+     *
+     * <p>N5 — 토큰은 용도별 세 집합(identity·mail·agents, {@link InternalTokenRoutes})이고 각각 콤마로 `신,구`를
+     * 적을 수 있다. 새 값이 비면 옛 공유 토큰({@code platform.org.internal-token} = {@code ORG_INTERNAL_TOKEN}).
      */
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
     SecurityFilterChain internalChain(HttpSecurity http,
-                                      @Value("${platform.org.internal-token:}") String internalToken) throws Exception {
+                                      @Value("${platform.org.internal-token:}") String legacyToken,
+                                      @Value("${platform.internal.tokens.identity:}") String identityTokens,
+                                      @Value("${platform.internal.tokens.mail:}") String mailTokens,
+                                      @Value("${platform.internal.tokens.agents:}") String agentTokens) throws Exception {
+        InternalTokenFilter filter = InternalTokenFilter.byPath(
+                InternalTokenRoutes.routes(identityTokens, mailTokens, agentTokens, legacyToken));
         http
                 .securityMatcher("/internal/org/**")
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-                .addFilterBefore(new InternalTokenFilter(internalToken), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

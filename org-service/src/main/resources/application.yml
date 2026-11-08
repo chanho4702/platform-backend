@@ -89,8 +89,23 @@ platform:
       token: ${PLATFORM_GRPC_TOKEN:}
   # 최초 GLOBAL ADMIN 부트스트랩 — auth-server user id. 빈 값이면 시드 생략.
   bootstrap-admin-id: ${PLATFORM_BOOTSTRAP_ADMIN_ID:}
+  internal:
+    # N5 내부 토큰 용도별 분리(2026-11-08). 값마다 콤마로 여러 개(`신,구`)를 적을 수 있다 — 무중단 회전.
+    # 비어 있으면(빈 문자열 포함) platform.org.internal-token(ORG_INTERNAL_TOKEN)으로 폴백한다. 폴백은 코드
+    # (InternalTokenRoutes)가 한다 — yml의 ${NEW:${OLD:}}는 NEW가 빈 문자열로 들어오면 폴백하지 않는다.
+    tokens:
+      # auth-server → /internal/org/invitations/**, members/ensure, members/{id}/authz
+      identity: ${ORG_IDENTITY_TOKEN:}
+      # wiki·alm → /internal/org/mail/** (ORG_AGENT_TOKEN도 함께 받는다 — agent-service는 env 하나로 메일도 보낸다)
+      mail: ${ORG_MAIL_TOKEN:}
+      # agent-service → /internal/org/members/agents/** (와 mail/**)
+      agents: ${ORG_AGENT_TOKEN:}
+    # 아웃바운드 org → auth-server /internal/users/**(구성원 비활성 전파). 인바운드 토큰과 분리.
+    auth-account-sync-token: ${AUTH_ACCOUNT_SYNC_TOKEN:}
   org:
-    # 서비스 간 전용 경로(/internal/org/**)의 토큰. 비어 있으면 내부 API 전체가 403이다(fail-closed).
+    # 서비스 간 전용 경로(/internal/org/**)의 옛 공유 토큰. N5부터는 아래 platform.internal.tokens.*(용도별)가
+    # 비어 있을 때의 폴백이다 — 새 값을 하나도 안 넣으면 예전처럼 이 값 하나가 모든 내부 경로를 연다.
+    # 이것까지 비면 내부 API 전체가 403이다(fail-closed).
     internal-token: ${ORG_INTERNAL_TOKEN:}
     invitation:
       # 초대 유효기간(ISO-8601 기간). 기본 7일.
@@ -142,7 +157,7 @@ platform:
         cleanup-cron: ${MAIL_OUTBOX_CLEANUP_CRON:0 40 4 * * *}
     auth-sync:
       # 구성원 정지·퇴사 → auth-server 계정 닫기(RT 전부 폐기·PAT 교환 거부), 해제·재초대 → 다시 열기(P-02).
-      # 인증은 위 internal-token(ORG_INTERNAL_TOKEN — auth-server와 같은 값)을 그대로 쓴다.
+      # 인증은 platform.internal.auth-account-sync-token(AUTH_ACCOUNT_SYNC_TOKEN, 비면 ORG_INTERNAL_TOKEN)이다.
       enabled: ${ORG_AUTH_SYNC_ENABLED:true}
       # auth-server 주소. 비우면 AUTH_JWKS_URI의 오리진(http://auth-server:9000)을 쓴다.
       uri: ${AUTH_SERVICE_URI:}

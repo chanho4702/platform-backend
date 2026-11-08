@@ -217,8 +217,11 @@ SUSPENDED·DEACTIVATED는 그 사람이 마지막 GLOBAL ADMIN이면 `409 {"erro
 `PUT {auth}/internal/users/{id}/status`로 보낸다 — auth-server가 죽어 있던 동안의 변경도 유실되지 않는다.
 gRPC `ListUserGrants`도 `CheckPermission`과 같이 비활성 구성원에게는 빈 목록이다.
 
-**서비스 간 전용 경로** — 게이트웨이가 라우팅하지 않는다. 인증은 `X-Internal-Token` 헤더 하나뿐이고,
-`ORG_INTERNAL_TOKEN`이 비어 있으면 헤더와 무관하게 전부 `403`이다(fail-closed).
+**서비스 간 전용 경로** — 게이트웨이가 라우팅하지 않는다. 인증은 `X-Internal-Token` 헤더 하나뿐이다.
+토큰은 용도별 세 집합이다(N5): identity(초대·ensure·authz) ← `ORG_IDENTITY_TOKEN`, mail(`/internal/org/mail/**`) ←
+`ORG_MAIL_TOKEN`과 `ORG_AGENT_TOKEN`, agents(`/internal/org/members/agents/**`) ← `ORG_AGENT_TOKEN`. 새 값이 비면
+(빈 문자열 포함) `ORG_INTERNAL_TOKEN`으로 폴백하고, 그것까지 비면 헤더와 무관하게 `403`이다(fail-closed). 어느 집합에도
+없는 내부 경로는 `403`이다. 값마다 콤마로 `신,구` 두 개를 적어 무중단 회전할 수 있다.
 
 | 메서드 | 경로 | 요청 → 응답 |
 |---|---|---|
@@ -229,7 +232,9 @@ gRPC `ListUserGrants`도 `CheckPermission`과 같이 비활성 구성원에게�
 
 | 변수 | 기본값 | 용도 |
 |---|---|---|
-| `ORG_INTERNAL_TOKEN` | (빈 값) | `/internal/org/**` 게이트. 비면 내부 API 전체 차단. auth-server 계정 상태 동기화(아래)에도 같은 값을 쓴다 |
+| `ORG_INTERNAL_TOKEN` | (빈 값) | 옛 공유 토큰 — 아래 용도별 변수가 비었을 때의 폴백. 모두 비면 내부 API 전체 차단 |
+| `ORG_IDENTITY_TOKEN` / `ORG_MAIL_TOKEN` / `ORG_AGENT_TOKEN` | (빈 값 → `ORG_INTERNAL_TOKEN`) | 인바운드 용도별 토큰(N5). mail 경로는 MAIL·AGENT 둘 다 받는다. 콤마로 `신,구` |
+| `AUTH_ACCOUNT_SYNC_TOKEN` | (빈 값 → `ORG_INTERNAL_TOKEN`) | 아웃바운드 org → auth-server `/internal/users/**` 계정 상태 동기화 토큰 |
 | `PLATFORM_GRPC_TOKEN` | (빈 값) | 서비스 간 gRPC 토큰(P-01). org gRPC 서버가 검사, 호출자가 송신 — 플랫폼 공용 1개 |
 | `PLATFORM_GRPC_AUTH_MODE` | `monitor` | `off` / `monitor`(통과+경고) / `enforce`(토큰 없거나 틀리면 `UNAUTHENTICATED`, 토큰 미설정이면 전부 거부) |
 | `ORG_GRPC_REFLECTION` | `false` | gRPC 서버 리플렉션. dev 프로필은 켬 |
