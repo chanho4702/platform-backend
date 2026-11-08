@@ -24,10 +24,21 @@ public final class InternalTokenRoutes {
     private InternalTokenRoutes() {
     }
 
-    /** 새 값이 비어 있지 않으면 그것, 아니면 옛 값. 둘 다 비면 빈 문자열(fail-closed). */
+    /**
+     * 새 값에 실제 토큰이 하나라도 있으면 그것, 아니면 옛 값. 둘 다 비면 빈 문자열(fail-closed).
+     * "비었다"는 auth-server와 같은 판정이다 — 콤마로 나눠 trim하고 빈 항목을 버린 결과가 비면(예: {@code " , "}) 빈 것.
+     */
     public static String orLegacy(String preferred, String legacy) {
-        if (preferred != null && !preferred.isBlank()) return preferred.trim();
+        if (hasToken(preferred)) return preferred.trim();
         return legacy == null ? "" : legacy.trim();
+    }
+
+    private static boolean hasToken(String raw) {
+        if (raw == null) return false;
+        for (String part : raw.split(",")) {
+            if (!part.isBlank()) return true;
+        }
+        return false;
     }
 
     public static LinkedHashMap<String, String> routes(String identity, String mail, String agents, String legacy) {
